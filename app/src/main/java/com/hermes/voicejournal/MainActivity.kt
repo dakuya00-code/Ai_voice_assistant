@@ -20,15 +20,23 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
-import com.google.android.material.textfield.TextInputLayout
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
     companion object {
+        private const val RELEASE_API_URL = "https://api.github.com/repos/dakuya00-code/Ai_voice_assistant/releases/latest"
         private const val UPDATE_URL = "https://github.com/dakuya00-code/Ai_voice_assistant/releases"
+        private val httpClient = OkHttpClient()
     }
 
     private lateinit var statusText: TextView
@@ -84,6 +92,10 @@ class MainActivity : AppCompatActivity() {
 
         ensurePermissions()
         refreshConfigSummary()
+
+        if (Prefs.isSetupComplete(this)) {
+            checkForAppUpdateOnLaunch()
+        }
 
         if (!Prefs.isSetupComplete(this)) {
             window.decorView.post {
@@ -179,6 +191,76 @@ class MainActivity : AppCompatActivity() {
 
         dialog.show()
     }
+
+    private fun checkForAppUpdateOnLaunch() {
+        lifecycleScope.launch {
+            val release = withContext(Dispatchers.IO) {
+                fetchLatestReleaseInfo()
+            } ?: return@launch
+
+            val lastSeen = Prefs.getLastSeenReleasePublishedAt(this@MainActivity)
+            if (release.publishedAt > lastSeen) {
+                Prefs.setLastSeenReleasePublishedAt(this@MainActivity, release.publishedAt)
+                showUpdateAvailableDialog(release)
+            }
+        }
+    }
+
+    private fun fetchLatestReleaseInfo(): ReleaseInfo? {
+        val request = Request.Builder()
+            .url(RELEASE_API_URL)
+            .header("Accept", "application/vnd.github+json")
+            .header("User-Agent", "Ai_voice_assistant")
+            .build()
+
+        httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return null
+            val body = response.body?.string().orEmpty()
+            if (body.isBlank()) return null
+            val json = JSONObject(body)
+            val publishedAt = json.optString("published_at")
+            if (publishedAt.isBlank()) return null
+            return ReleaseInfo(
+                tagName = json.optString("tag_name"),
+                name = json.optString("name"),
+                publishedAt = publishedAt,
+                htmlUrl = json.optString("html_url", UPDATE_URL),
+                body = json.optString("body")
+            )
+        }
+    }
+
+    private fun showUpdateAvailableDialog(release: ReleaseInfo) {
+        val message = buildString {
+            appendLine("새 업데이트가 있습니다.")
+            appendLine()
+            appendLine("릴리스: ${release.name.ifBlank { release.tagName.ifBlank { "latest" } }}")
+            appendLine("게시일: ${release.publishedAt}")
+            appendLine()
+            if (release.body.isNotBlank()) {
+                appendLine(release.body.trim())
+            } else {
+                appendLine("새 APK를 받아 설치해 주세요.")
+            }
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("업데이트 알림")
+            .setMessage(message)
+            .setPositiveButton("지금 열기") { _, _ ->
+                openUrl(release.htmlUrl.ifBlank { UPDATE_URL })
+            }
+            .setNegativeButton("나중에", null)
+            .show()
+    }
+
+    private data class ReleaseInfo(
+        val tagName: String,
+        val name: String,
+        val publishedAt: String,
+        val htmlUrl: String,
+        val body: String,
+    )
 
     private fun showSavedFilesDialog() {
         val entries = UploadHistoryStore.readAll(this).takeLast(20).asReversed()

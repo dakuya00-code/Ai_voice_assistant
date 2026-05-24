@@ -16,6 +16,7 @@ object Prefs {
     private const val KEY_SILENCE_TIMEOUT_SECONDS = "silence_timeout_seconds"
     private const val KEY_SESSION_LABEL = "session_label"
     private const val KEY_SETUP_COMPLETE = "setup_complete"
+    private const val KEY_LAST_SEEN_RELEASE_PUBLISHED_AT = "last_seen_release_published_at"
 
     fun load(context: Context): RecordingConfig {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -45,5 +46,15 @@ object Prefs {
     fun setSetupComplete(context: Context, complete: Boolean) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_SETUP_COMPLETE, complete).apply()
+    }
+
+    fun getLastSeenReleasePublishedAt(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_LAST_SEEN_RELEASE_PUBLISHED_AT, "") ?: ""
+    }
+
+    fun setLastSeenReleasePublishedAt(context: Context, publishedAt: String) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_LAST_SEEN_RELEASE_PUBLISHED_AT, publishedAt).apply()
     }
 }
