@@ -6,6 +6,7 @@
     <string name="menu_saved_files">저장된 파일</string>
     <string name="menu_check_update">업데이트 확인</string>
     <string name="menu_install_guide">설치 안내</string>
+    <string name="manual_upload">수동 업로드</string>
     <string name="settings_title">설정</string>
     <string name="saved_settings_title">저장된 설정</string>
     <string name="saved_files_title">파일 히스토리</string>

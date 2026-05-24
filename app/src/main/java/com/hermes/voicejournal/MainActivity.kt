@@ -20,16 +20,22 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
     companion object {
         private const val UPDATE_URL = "https://github.com/dakuya00-code/Ai_voice_assistant/releases"
     }
+
+    private val uploadClient = UploadClient()
 
     private lateinit var statusText: TextView
     private lateinit var configSummaryText: TextView
@@ -63,6 +69,7 @@ class MainActivity : AppCompatActivity() {
 
         val startButton: MaterialButton = findViewById(R.id.startButton)
         val stopButton: MaterialButton = findViewById(R.id.stopButton)
+        val manualUploadButton: MaterialButton = findViewById(R.id.manualUploadButton)
 
         startButton.setOnClickListener {
             if (!Prefs.isSetupComplete(this)) {
@@ -73,6 +80,11 @@ class MainActivity : AppCompatActivity() {
             }
             hapticSuccess(startButton)
             beginVoiceMonitoring()
+        }
+
+        manualUploadButton.setOnClickListener {
+            hapticSuccess(manualUploadButton)
+            startManualUpload()
         }
 
         stopButton.setOnClickListener {
@@ -215,6 +227,107 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun startManualUpload() {
+        val pendingFiles = listLocalRecordingFiles().sortedBy { it.lastModified() }
+        if (pendingFiles.isEmpty()) {
+            toast("수동 업로드할 음성파일이 없습니다.")
+            return
+        }
+
+        statusText.text = "수동 업로드 준비 중 · ${pendingFiles.size}개"
+        lifecycleScope.launch {
+            val config = Prefs.load(this@MainActivity)
+            var successCount = 0
+            var failureCount = 0
+            val failedNames = mutableListOf<String>()
+
+            for (file in pendingFiles) {
+                val meta = readPendingUploadMeta(file)
+                val result = uploadClient.uploadChunk(
+                    serverUrl = config.serverUrl,
+                    uploadPath = config.uploadPath,
+                    sessionId = meta.sessionId,
+                    chunkIndex = meta.chunkIndex,
+                    durationSeconds = meta.durationSeconds,
+                    startedAtIso = meta.startedAtIso,
+                    file = file,
+                )
+
+                if (result.isSuccess) {
+                    UploadHistoryStore.append(
+                        this@MainActivity,
+                        UploadedFileEntry(
+                            sessionId = meta.sessionId,
+                            fileName = file.name,
+                            chunkIndex = meta.chunkIndex,
+                            durationSeconds = meta.durationSeconds,
+                            startedAtIso = meta.startedAtIso,
+                            uploadedAtIso = java.time.Instant.now().toString(),
+                        )
+                    )
+                    runCatching { file.delete() }
+                    runCatching { File(file.parentFile, "${file.nameWithoutExtension}.json").delete() }
+                    successCount += 1
+                } else {
+                    failureCount += 1
+                    failedNames += file.name
+                }
+            }
+
+            refreshConfigSummary()
+            statusText.text = if (failureCount == 0) {
+                "수동 업로드 완료 · ${successCount}개"
+            } else {
+                "수동 업로드 일부 실패 · 성공 ${successCount}개 / 실패 ${failureCount}개"
+            }
+            toast(
+                if (failureCount == 0) {
+                    "수동 업로드를 완료했습니다."
+                } else {
+                    "수동 업로드 실패 파일: ${failedNames.joinToString(", ")}"
+                }
+            )
+        }
+    }
+
+    private data class PendingUploadMeta(
+        val sessionId: String,
+        val chunkIndex: Int,
+        val durationSeconds: Long,
+        val startedAtIso: String,
+    )
+
+    private fun readPendingUploadMeta(file: File): PendingUploadMeta {
+        val metaFile = File(file.parentFile, "${file.nameWithoutExtension}.json")
+        if (metaFile.exists()) {
+            runCatching {
+                val json = JSONObject(metaFile.readText())
+                return PendingUploadMeta(
+                    sessionId = json.optString("session_id").ifBlank { file.parentFile?.name ?: "manual" },
+                    chunkIndex = json.optInt("chunk_index", parseChunkIndex(file.name)),
+                    durationSeconds = json.optLong("duration_seconds", 1L).coerceAtLeast(1L),
+                    startedAtIso = json.optString("started_at").ifBlank { metaTimestamp(file) },
+                )
+            }
+        }
+
+        return PendingUploadMeta(
+            sessionId = file.parentFile?.name ?: "manual",
+            chunkIndex = parseChunkIndex(file.name),
+            durationSeconds = 1L,
+            startedAtIso = metaTimestamp(file),
+        )
+    }
+
+    private fun parseChunkIndex(name: String): Int {
+        val match = Regex("meeting_(\\d+)_").find(name)
+        return match?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+    }
+
+    private fun metaTimestamp(file: File): String {
+        return java.time.Instant.ofEpochMilli(file.lastModified()).toString()
+    }
+
     private fun showUpdateDialog() {
         val currentVersion = runCatching {
             @Suppress("DEPRECATION")
@@ -237,6 +350,14 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun openUrl(url: String) {
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }.onFailure {
+            toast("업데이트 페이지를 열 수 없습니다.")
+        }
+    }
+
     private fun showInstallGuideDialog() {
         val message = buildString {
             appendLine("설치/세팅 안내")
@@ -257,14 +378,6 @@ class MainActivity : AppCompatActivity() {
             .setMessage(message)
             .setPositiveButton("닫기", null)
             .show()
-    }
-
-    private fun openUrl(url: String) {
-        runCatching {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        }.onFailure {
-            toast("업데이트 페이지를 열 수 없습니다.")
-        }
     }
 
     private fun listLocalRecordingFiles(): List<java.io.File> {
