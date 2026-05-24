@@ -40,7 +40,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="업무용 녹음 · 설정 1회 저장 · 메뉴에서 재수정"
+                android:text="업무용 녹음 · 설정은 1회만"
                 android:textColor="#B3FFFFFF" />
 
             <com.google.android.material.card.MaterialCardView
@@ -150,7 +150,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="주의: 안드로이드의 마이크 사용 표시와 포그라운드 서비스 알림은 OS 정책상 완전히 숨길 수 없습니다. 대신 알림은 조용하게 최소화했습니다."
+                android:text="마이크 사용 표시는 OS 정책상 유지됩니다. 알림은 조용하게 최소화했습니다."
                 android:textColor="#94A3B8" />
         </LinearLayout>
     </ScrollView>

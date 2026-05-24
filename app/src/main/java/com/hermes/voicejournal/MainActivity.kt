@@ -199,12 +199,29 @@ class MainActivity : AppCompatActivity() {
 
     private fun hapticSuccess(view: android.view.View) {
         view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+        pulse(view, pressedScale = 0.97f, bounceScale = 1.0f, shortDuration = 70L, bounceDuration = 120L)
         vibrate(18)
     }
 
     private fun hapticStop(view: android.view.View) {
         view.performHapticFeedback(HapticFeedbackConstants.REJECT)
+        pulse(view, pressedScale = 0.94f, bounceScale = 1.0f, shortDuration = 80L, bounceDuration = 140L)
         vibrate(28)
+    }
+
+    private fun pulse(view: android.view.View, pressedScale: Float, bounceScale: Float, shortDuration: Long, bounceDuration: Long) {
+        view.animate()
+            .scaleX(pressedScale)
+            .scaleY(pressedScale)
+            .setDuration(shortDuration)
+            .withEndAction {
+                view.animate()
+                    .scaleX(bounceScale)
+                    .scaleY(bounceScale)
+                    .setDuration(bounceDuration)
+                    .start()
+            }
+            .start()
     }
 
     private fun vibrate(durationMs: Long) {
