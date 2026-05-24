@@ -15,11 +15,12 @@ object Prefs {
     private const val KEY_UPLOAD_PATH = "upload_path"
     private const val KEY_CHUNK_MINUTES = "chunk_minutes"
     private const val KEY_SESSION_LABEL = "session_label"
+    private const val KEY_SETUP_COMPLETE = "setup_complete"
 
     fun load(context: Context): RecordingConfig {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return RecordingConfig(
-            serverUrl = prefs.getString(KEY_SERVER_URL, "https://your-domain.example") ?: "https://your-domain.example",
+            serverUrl = prefs.getString(KEY_SERVER_URL, "http://your-vps-ip:8799") ?: "http://your-vps-ip:8799",
             uploadPath = prefs.getString(KEY_UPLOAD_PATH, "/api/upload") ?: "/api/upload",
             chunkMinutes = prefs.getInt(KEY_CHUNK_MINUTES, 60),
             sessionLabel = prefs.getString(KEY_SESSION_LABEL, "workday") ?: "workday",
@@ -34,5 +35,15 @@ object Prefs {
             .putInt(KEY_CHUNK_MINUTES, config.chunkMinutes)
             .putString(KEY_SESSION_LABEL, config.sessionLabel)
             .apply()
+    }
+
+    fun isSetupComplete(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_SETUP_COMPLETE, false)
+    }
+
+    fun setSetupComplete(context: Context, complete: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_SETUP_COMPLETE, complete).apply()
     }
 }
