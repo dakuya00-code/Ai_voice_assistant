@@ -71,10 +71,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun readConfig(): RecordingConfig {
         return RecordingConfig(
-            serverUrl = serverUrlInput.text?.toString()?.trim().orEmpty(),
-            uploadPath = uploadPathInput.text?.toString()?.trim().ifBlank { "/api/upload" },
-            chunkMinutes = chunkMinutesInput.text?.toString()?.trim()?.toIntOrNull()?.coerceAtLeast(1) ?: 60,
-            sessionLabel = sessionLabelInput.text?.toString()?.trim().ifBlank { "workday" },
+            serverUrl = serverUrlInput.text?.toString().orEmpty().trim(),
+            uploadPath = uploadPathInput.text?.toString().orEmpty().trim().ifBlank { "/api/upload" },
+            chunkMinutes = chunkMinutesInput.text?.toString().orEmpty().trim().toIntOrNull()?.coerceAtLeast(1) ?: 60,
+            sessionLabel = sessionLabelInput.text?.toString().orEmpty().trim().ifBlank { "workday" },
         )
     }
 
