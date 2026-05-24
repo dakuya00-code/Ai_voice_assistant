@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Ai Voice Assistant</string>
+    <string name="start_recording">녹음 시작</string>
+    <string name="stop_recording">녹음 정지</string>
+</resources>
