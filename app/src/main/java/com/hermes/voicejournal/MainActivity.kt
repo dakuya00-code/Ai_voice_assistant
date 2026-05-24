@@ -25,6 +25,7 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -92,10 +93,7 @@ class MainActivity : AppCompatActivity() {
 
         ensurePermissions()
         refreshConfigSummary()
-
-        if (Prefs.isSetupComplete(this)) {
-            checkForAppUpdateOnLaunch()
-        }
+        lifecycleScope.launch { checkForAppUpdateOnStartup() }
 
         if (!Prefs.isSetupComplete(this)) {
             window.decorView.post {
@@ -315,6 +313,66 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton("닫기", null)
             .show()
     }
+
+    private suspend fun checkForAppUpdateOnStartup() {
+        if (!Prefs.isSetupComplete(this)) return
+
+        val latest = withContext(Dispatchers.IO) { fetchLatestReleaseInfo() } ?: return
+        val lastSeen = Prefs.getLastSeenReleasePublishedAt(this@MainActivity)
+        if (latest.publishedAt.isBlank() || latest.publishedAt == lastSeen) return
+
+        Prefs.setLastSeenReleasePublishedAt(this@MainActivity, latest.publishedAt)
+        showUpdateAvailableDialog(latest)
+    }
+
+    private fun fetchLatestReleaseInfo(): ReleaseInfo? {
+        val request = Request.Builder()
+            .url(RELEASE_API_URL)
+            .header("Accept", "application/vnd.github+json")
+            .header("User-Agent", "Ai_voice_assistant")
+            .build()
+
+        httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return null
+            val body = response.body?.string().orEmpty()
+            if (body.isBlank()) return null
+            val json = JSONObject(body)
+            val title = json.optString("name").ifBlank { json.optString("tag_name") }
+            return ReleaseInfo(
+                tagName = json.optString("tag_name"),
+                title = title,
+                htmlUrl = json.optString("html_url", UPDATE_URL),
+                publishedAt = json.optString("published_at"),
+            )
+        }
+    }
+
+    private fun showUpdateAvailableDialog(release: ReleaseInfo) {
+        val currentVersion = BuildConfig.VERSION_NAME
+        val message = buildString {
+            appendLine("현재 설치 버전: v$currentVersion")
+            appendLine("새 업데이트가 있습니다: ${release.title.ifBlank { release.tagName }}")
+            appendLine()
+            appendLine("업데이트 페이지를 열어 최신 APK를 받으세요.")
+            appendLine("설치 후 기존 설정은 유지됩니다.")
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("업데이트 있음")
+            .setMessage(message)
+            .setPositiveButton("업데이트 페이지 열기") { _, _ ->
+                openUrl(release.htmlUrl)
+            }
+            .setNegativeButton("나중에", null)
+            .show()
+    }
+
+    private data class ReleaseInfo(
+        val tagName: String,
+        val title: String,
+        val htmlUrl: String,
+        val publishedAt: String,
+    )
 
     private fun showInstallGuideDialog() {
         val message = buildString {
