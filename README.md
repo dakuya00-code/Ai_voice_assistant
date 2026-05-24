@@ -22,6 +22,9 @@ Android 우선 백그라운드 녹음 앱입니다.
 ## 빌드/배포
 - 로컬 이 환경에서는 JDK/Gradle/Android SDK가 없어 바로 APK를 만들 수 없습니다.
 - GitHub Actions 워크플로우: `.github/workflows/build-debug-apk.yml`
+- GitHub Secrets 필요값:
+  - `TELEGRAM_BOT_TOKEN`
+  - `TELEGRAM_CHAT_ID`
 - 빌드된 APK를 텔레그램으로 보내는 스크립트: `scripts/send_apk_to_telegram.py`
 - 현재 앱/프로젝트 이름은 `Ai_voice_assistant`로 맞춰둠
 

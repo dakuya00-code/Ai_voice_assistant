@@ -59,3 +59,34 @@ jobs:
           name: Ai_voice_assistant-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+  telegram-delivery:
+    runs-on: ubuntu-latest
+    needs: build-debug-apk
+
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Ai_voice_assistant-debug-apk
+          path: dist
+
+      - name: Show Telegram secret status
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Telegram secrets are not configured; skipping delivery."
+            exit 0
+          fi
+          echo "Telegram secrets are configured."
+
+      - name: Send APK to Telegram
+        if: ${{ env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' }}
+        run: |
+          python3 scripts/send_apk_to_telegram.py dist/app-debug.apk
