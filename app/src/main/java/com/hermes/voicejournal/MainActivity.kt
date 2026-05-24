@@ -95,6 +95,18 @@ class MainActivity : AppCompatActivity() {
                 showSettingsDialog(firstRun = false)
                 true
             }
+            R.id.menu_saved_settings -> {
+                showSavedSettingsDialog()
+                true
+            }
+            R.id.menu_saved_files -> {
+                showSavedFilesDialog()
+                true
+            }
+            R.id.menu_install_guide -> {
+                showInstallGuideDialog()
+                true
+            }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -158,6 +170,70 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
+    }
+
+    private fun showSavedSettingsDialog() {
+        val config = Prefs.load(this)
+        val message = buildString {
+            appendLine("저장된 설정")
+            appendLine("- 서버 URL: ${config.serverUrl}")
+            appendLine("- 업로드 경로: ${config.uploadPath}")
+            appendLine("- 무음 종료 시간: ${config.silenceTimeoutSeconds}초")
+            appendLine("- 세션 이름: ${config.sessionLabel}")
+            appendLine()
+            appendLine("이 값은 메인 화면의 설정 카드와 동일합니다.")
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.saved_settings_title)
+            .setMessage(message)
+            .setPositiveButton("닫기", null)
+            .show()
+    }
+
+    private fun showSavedFilesDialog() {
+        val entries = UploadHistoryStore.readAll(this).takeLast(20).asReversed()
+        val message = if (entries.isEmpty()) {
+            "아직 저장된 파일이 없습니다.\n녹음 후 업로드가 성공하면 여기에 최근 파일 기록이 표시됩니다."
+        } else {
+            buildString {
+                appendLine("최근 업로드된 파일")
+                appendLine()
+                entries.forEachIndexed { index, entry ->
+                    appendLine("${index + 1}. ${entry.fileName}")
+                    appendLine("   세션: ${entry.sessionId}")
+                    appendLine("   길이: ${entry.durationSeconds}초")
+                    appendLine("   시작: ${entry.startedAtIso}")
+                    appendLine("   업로드: ${entry.uploadedAtIso}")
+                    appendLine()
+                }
+            }
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.saved_files_title)
+            .setMessage(message)
+            .setPositiveButton("닫기", null)
+            .show()
+    }
+
+    private fun showInstallGuideDialog() {
+        val message = buildString {
+            appendLine("설치/세팅 안내")
+            appendLine()
+            appendLine("1. 앱 설치 후 실행")
+            appendLine("2. 첫 실행 설정에서 VPS 주소 입력")
+            appendLine("3. 업로드 경로는 /api/upload 유지")
+            appendLine("4. 무음 종료 시간은 15초 권장")
+            appendLine("5. 시작 버튼을 누르면 음성 감지 대기 상태로 전환")
+            appendLine("6. 권한(마이크/알림) 허용")
+            appendLine("7. 삼성 배터리 최적화에서 제외하면 안정적")
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.install_guide_title)
+            .setMessage(message)
+            .setPositiveButton("닫기", null)
+            .show()
     }
 
     private fun beginVoiceMonitoring() {

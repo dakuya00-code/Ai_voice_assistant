@@ -7,4 +7,22 @@
         android:title="설정"
         android:icon="@android:drawable/ic_menu_manage"
         app:showAsAction="never" />
+
+    <item
+        android:id="@+id/menu_saved_settings"
+        android:title="저장된 설정"
+        android:icon="@android:drawable/ic_menu_agenda"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/menu_saved_files"
+        android:title="저장된 파일"
+        android:icon="@android:drawable/ic_menu_save"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/menu_install_guide"
+        android:title="설치 안내"
+        android:icon="@android:drawable/ic_menu_info_details"
+        app:showAsAction="never" />
 </menu>

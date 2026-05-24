@@ -172,6 +172,17 @@ class RecordingService : Service() {
         )
 
         if (uploadResult.isSuccess) {
+            UploadHistoryStore.append(
+                this,
+                UploadedFileEntry(
+                    sessionId = currentSessionId,
+                    fileName = file.name,
+                    chunkIndex = currentSegmentIndex,
+                    durationSeconds = durationSeconds,
+                    startedAtIso = isoNow(startedAtMs),
+                    uploadedAtIso = isoNow(System.currentTimeMillis()),
+                )
+            )
             file.delete()
             currentSegmentIndex += 1
             if (isRunning) {
