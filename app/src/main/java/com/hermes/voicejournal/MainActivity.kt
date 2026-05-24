@@ -27,6 +27,7 @@ import com.google.android.material.textfield.TextInputLayout
 class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var configSummaryText: TextView
+    private lateinit var recordingUsageText: TextView
     private var pendingStartAfterSetup = false
 
     private val permissionLauncher = registerForActivityResult(
@@ -52,6 +53,7 @@ class MainActivity : AppCompatActivity() {
 
         statusText = findViewById(R.id.statusText)
         configSummaryText = findViewById(R.id.configSummaryText)
+        recordingUsageText = findViewById(R.id.recordingUsageText)
 
         val startButton: MaterialButton = findViewById(R.id.startButton)
         val stopButton: MaterialButton = findViewById(R.id.stopButton)
@@ -70,8 +72,8 @@ class MainActivity : AppCompatActivity() {
         stopButton.setOnClickListener {
             hapticStop(stopButton)
             RecordingService.stop(this)
-            statusText.text = "정지 요청됨"
-            toast("음성 감지를 정지했습니다.")
+            statusText.text = "감지 종료 요청됨"
+            toast("음성 감지를 종료했습니다. 진행 중인 조각이 있으면 업로드 후 멈춥니다.")
         }
 
         ensurePermissions()
@@ -93,10 +95,6 @@ class MainActivity : AppCompatActivity() {
         return when (item.itemId) {
             R.id.menu_settings -> {
                 showSettingsDialog(firstRun = false)
-                true
-            }
-            R.id.menu_saved_settings -> {
-                showSavedSettingsDialog()
                 true
             }
             R.id.menu_saved_files -> {
@@ -172,24 +170,6 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun showSavedSettingsDialog() {
-        val config = Prefs.load(this)
-        val message = buildString {
-            appendLine("저장된 설정")
-            appendLine("- 서버 URL: ${config.serverUrl}")
-            appendLine("- 업로드 경로: ${config.uploadPath}")
-            appendLine("- 무음 종료 시간: ${config.silenceTimeoutSeconds}초")
-            appendLine("- 세션 이름: ${config.sessionLabel}")
-            appendLine()
-            appendLine("이 값은 메인 화면의 설정 카드와 동일합니다.")
-        }
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.saved_settings_title)
-            .setMessage(message)
-            .setPositiveButton("닫기", null)
-            .show()
-    }
-
     private fun showSavedFilesDialog() {
         val entries = UploadHistoryStore.readAll(this).takeLast(20).asReversed()
         val pendingFiles = listLocalRecordingFiles().takeLast(20).asReversed()
@@ -233,9 +213,10 @@ class MainActivity : AppCompatActivity() {
             appendLine("2. 첫 실행 설정에서 VPS 주소 입력")
             appendLine("3. 업로드 경로는 /api/upload 유지")
             appendLine("4. 무음 종료 시간은 15초 권장")
-            appendLine("5. 시작 버튼을 누르면 음성 감지 대기 상태로 전환")
-            appendLine("6. 권한(마이크/알림) 허용")
-            appendLine("7. 삼성 배터리 최적화에서 제외하면 안정적")
+            appendLine("5. 시작 버튼 = 음성감지 시작")
+            appendLine("6. 중지 버튼 = 감지 완전 종료(진행 중 조각 업로드 후 종료)")
+            appendLine("7. 권한(마이크/알림) 허용")
+            appendLine("8. 삼성 배터리 최적화에서 제외하면 안정적")
         }
 
         MaterialAlertDialogBuilder(this)
@@ -257,12 +238,14 @@ class MainActivity : AppCompatActivity() {
     private fun beginVoiceMonitoring() {
         val cfg = Prefs.load(this)
         RecordingService.start(this)
-        statusText.text = "음성 감지 대기 중 · 무음 ${cfg.silenceTimeoutSeconds}초 후 종료"
-        toast("음성 감지를 시작했습니다.")
+        statusText.text = "음성감지 대기 중 · 한 번 켜면 계속 감지합니다 · 사람이 말하면 자동 녹음 · 무음 ${cfg.silenceTimeoutSeconds}초 후 업로드"
+        toast("음성감지를 시작했습니다. 사람 목소리를 감지하면 자동으로 녹음합니다.")
     }
 
     private fun refreshConfigSummary() {
         val config = Prefs.load(this)
+        val usage = "시작: 음성감지를 켭니다. 한 번 켜면 사용자가 중지할 때까지 계속 감지합니다. 사람이 말하면 자동으로 녹음하고, 무음 ${config.silenceTimeoutSeconds}초가 지속되면 그 조각을 업로드한 뒤 다시 대기합니다.\n중지: 음성감지를 완전히 종료합니다. 진행 중인 조각이 있으면 마무리 후 업로드하고 멈춥니다."
+        recordingUsageText.text = usage
         val summary = buildString {
             appendLine("현재 설정")
             appendLine("- 서버 URL: ${config.serverUrl}")

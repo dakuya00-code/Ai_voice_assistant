@@ -9,12 +9,6 @@
         app:showAsAction="never" />
 
     <item
-        android:id="@+id/menu_saved_settings"
-        android:title="저장된 설정"
-        android:icon="@android:drawable/ic_menu_agenda"
-        app:showAsAction="never" />
-
-    <item
         android:id="@+id/menu_saved_files"
         android:title="파일 히스토리"
         android:icon="@android:drawable/ic_menu_save"

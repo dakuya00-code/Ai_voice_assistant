@@ -99,6 +99,14 @@
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
+                    <TextView
+                        android:id="@+id/recordingUsageText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:textColor="#94A3B8"
+                        android:text="시작: 음성감지를 켭니다.\n중지: 음성감지를 완전히 종료합니다." />
+
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
