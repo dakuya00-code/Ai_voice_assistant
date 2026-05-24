@@ -5,6 +5,7 @@ import android.content.DialogInterface
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
@@ -13,11 +14,15 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.getSystemService
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 
 class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
@@ -51,23 +56,26 @@ class MainActivity : AppCompatActivity() {
         val startButton: MaterialButton = findViewById(R.id.startButton)
         val stopButton: MaterialButton = findViewById(R.id.stopButton)
 
-        ensurePermissions()
-        refreshConfigSummary()
-
         startButton.setOnClickListener {
             if (!Prefs.isSetupComplete(this)) {
                 pendingStartAfterSetup = true
+                hapticSuccess(startButton)
                 showSettingsDialog(firstRun = true)
                 return@setOnClickListener
             }
+            hapticSuccess(startButton)
             beginRecording()
         }
 
         stopButton.setOnClickListener {
+            hapticStop(stopButton)
             RecordingService.stop(this)
             statusText.text = "정지 요청됨"
             toast("녹음을 정지했습니다.")
         }
+
+        ensurePermissions()
+        refreshConfigSummary()
 
         if (!Prefs.isSetupComplete(this)) {
             window.decorView.post {
@@ -109,7 +117,7 @@ class MainActivity : AppCompatActivity() {
         sessionLabelInput.setText(current.sessionLabel)
 
         val dialog = MaterialAlertDialogBuilder(this)
-            .setTitle(if (firstRun) "초기 설정" else "설정")
+            .setTitle(if (firstRun) getString(R.string.first_run_title) else getString(R.string.settings_title))
             .setMessage(if (firstRun) "처음 한 번만 설정하면 됩니다. 이후에는 메뉴에서 수정할 수 있어요." else null)
             .setView(view)
             .setNegativeButton("취소", null)
@@ -186,6 +194,29 @@ class MainActivity : AppCompatActivity() {
         }
         if (missing.isNotEmpty()) {
             permissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+
+    private fun hapticSuccess(view: android.view.View) {
+        view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+        vibrate(18)
+    }
+
+    private fun hapticStop(view: android.view.View) {
+        view.performHapticFeedback(HapticFeedbackConstants.REJECT)
+        vibrate(28)
+    }
+
+    private fun vibrate(durationMs: Long) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val manager = getSystemService<VibratorManager>()
+            val vibrator = manager?.defaultVibrator
+            vibrator?.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION")
+            val vibrator = getSystemService<Vibrator>()
+            @Suppress("DEPRECATION")
+            vibrator?.vibrate(durationMs)
         }
     }
 

@@ -60,7 +60,7 @@ class RecordingService : Service() {
         currentSessionId = buildSessionId(config?.sessionLabel ?: "workday")
         currentChunkIndex = 0
         isRunning = true
-        startForeground(NOTIFICATION_ID, buildNotification("준비 중"))
+        startForeground(NOTIFICATION_ID, buildNotification("녹음 준비 중"))
 
         activeJob = serviceScope.launch {
             runLoop()
@@ -84,13 +84,13 @@ class RecordingService : Service() {
             currentChunkStartedAtMs = System.currentTimeMillis()
 
             startRecorder(file)
-            updateNotification("녹음 중 · 청크 ${currentChunkIndex + 1}")
+            updateNotification("기록 중 · 청크 ${currentChunkIndex + 1}")
 
             delay(cfg.chunkMinutes * 60_000L)
 
             stopRecorderSafely()
             val durationSeconds = ((System.currentTimeMillis() - currentChunkStartedAtMs) / 1000L).coerceAtLeast(1L)
-            updateNotification("업로드 중 · 청크 ${currentChunkIndex + 1}")
+            updateNotification("전송 중 · 청크 ${currentChunkIndex + 1}")
 
             val uploadResult = uploadClient.uploadChunk(
                 serverUrl = cfg.serverUrl,
@@ -165,12 +165,14 @@ class RecordingService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setSmallIcon(R.drawable.ic_notebook_badge)
             .setContentTitle("Ai Voice Assistant")
             .setContentText(content)
             .setContentIntent(contentPendingIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .addAction(android.R.drawable.ic_delete, "정지", stopPendingIntent)
             .build()
     }
@@ -183,10 +185,14 @@ class RecordingService : Service() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val channel = NotificationChannel(
-                    CHANNEL_ID,
-                    "Ai Voice Assistant Recording",
+            CHANNEL_ID,
+            "Ai Voice Assistant Recording",
             NotificationManager.IMPORTANCE_LOW
-        )
+        ).apply {
+            setSound(null, null)
+            enableVibration(false)
+            enableLights(false)
+        }
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(channel)
     }

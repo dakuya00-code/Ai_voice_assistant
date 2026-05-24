@@ -2,14 +2,17 @@
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="@color/color_background">
 
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/topAppBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/colorSurface"
+        android:background="@color/color_background"
         android:title="@string/app_name"
+        android:titleTextColor="@android:color/white"
+        app:navigationIcon="@drawable/ic_notebook_badge"
         app:titleCentered="false" />
 
     <ScrollView
@@ -29,46 +32,110 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Voice Journal"
-                android:textSize="26sp"
+                android:textColor="@android:color/white"
+                android:textSize="28sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="처음 한 번만 설정하면, 이후에는 오른쪽 위 메뉴의 설정에서 바꿀 수 있습니다." />
+                android:text="업무용 녹음 · 설정 1회 저장 · 메뉴에서 재수정"
+                android:textColor="#B3FFFFFF" />
 
-            <TextView
-                android:id="@+id/configSummaryText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:padding="16dp"
-                android:background="@android:drawable/dialog_holo_light_frame"
-                android:text="현재 설정" />
-
-            <LinearLayout
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
-                android:orientation="horizontal">
+                app:cardBackgroundColor="@color/color_surface"
+                app:cardCornerRadius="24dp"
+                app:strokeColor="#223041"
+                app:strokeWidth="1dp">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/startButton"
-                    android:layout_width="0dp"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/start_recording" />
+                    android:orientation="vertical"
+                    android:padding="18dp">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/stopButton"
-                    android:layout_width="0dp"
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="현재 설정"
+                        android:textColor="@android:color/white"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/configSummaryText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:textColor="#D1D5DB"
+                        android:text="현재 설정" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                app:cardBackgroundColor="@color/color_surface"
+                app:cardCornerRadius="28dp"
+                app:strokeColor="#243041"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:layout_weight="1"
-                    android:text="@string/stop_recording"
-                    app:backgroundTint="@android:color/holo_red_dark" />
-            </LinearLayout>
+                    android:orientation="vertical"
+                    android:padding="18dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="컨트롤"
+                        android:textColor="@android:color/white"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/startButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/start_recording"
+                            app:cornerRadius="18dp"
+                            app:icon="@drawable/ic_play_badge"
+                            app:iconGravity="textStart"
+                            app:iconPadding="8dp"
+                            app:iconTint="@android:color/white"
+                            app:backgroundTint="@color/color_primary_dark"
+                            android:textColor="@android:color/white" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/stopButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:layout_weight="1"
+                            android:text="@string/stop_recording"
+                            app:cornerRadius="18dp"
+                            app:icon="@drawable/ic_stop_badge"
+                            app:iconGravity="textStart"
+                            app:iconPadding="8dp"
+                            app:iconTint="@android:color/white"
+                            app:backgroundTint="#334155"
+                            android:textColor="@android:color/white" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
             <TextView
                 android:id="@+id/statusText"
@@ -76,13 +143,15 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
                 android:text="대기 중"
+                android:textColor="#E5E7EB"
                 android:textSize="16sp" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="권장: HTTPS를 사용하세요. 테스트만 할 때는 cleartext 허용이 켜져 있습니다." />
+                android:text="주의: 안드로이드의 마이크 사용 표시와 포그라운드 서비스 알림은 OS 정책상 완전히 숨길 수 없습니다. 대신 알림은 조용하게 최소화했습니다."
+                android:textColor="#94A3B8" />
         </LinearLayout>
     </ScrollView>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

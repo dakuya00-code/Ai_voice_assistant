@@ -1,6 +1,10 @@
 <resources>
-    <color name="purple_500">#6D28D9</color>
-    <color name="teal_200">#2DD4BF</color>
-    <color name="blue_500">#2563EB</color>
-    <color name="green_500">#10B981</color>
+    <color name="color_background">#050505</color>
+    <color name="color_surface">#0F1115</color>
+    <color name="color_surface_variant">#151922</color>
+    <color name="color_primary">#7DD3FC</color>
+    <color name="color_primary_dark">#38BDF8</color>
+    <color name="color_secondary">#9CA3AF</color>
+    <color name="color_accent">#22C55E</color>
+    <color name="color_warning">#F59E0B</color>
 </resources>
