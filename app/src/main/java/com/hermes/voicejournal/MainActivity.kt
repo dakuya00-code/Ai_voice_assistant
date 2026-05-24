@@ -216,7 +216,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showUpdateDialog() {
-        val currentVersion = BuildConfig.VERSION_NAME
+        val currentVersion = runCatching {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown"
+        }.getOrElse { "unknown" }
         val message = buildString {
             appendLine("현재 설치 버전: v$currentVersion")
             appendLine()
