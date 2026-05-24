@@ -8,7 +8,7 @@
     <string name="menu_install_guide">설치 안내</string>
     <string name="settings_title">설정</string>
     <string name="saved_settings_title">저장된 설정</string>
-    <string name="saved_files_title">저장된 파일</string>
+    <string name="saved_files_title">파일 히스토리</string>
     <string name="install_guide_title">설치 안내</string>
     <string name="first_run_title">초기 설정</string>
 </resources>

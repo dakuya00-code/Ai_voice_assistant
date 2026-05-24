@@ -16,7 +16,7 @@
 
     <item
         android:id="@+id/menu_saved_files"
-        android:title="저장된 파일"
+        android:title="파일 히스토리"
         android:icon="@android:drawable/ic_menu_save"
         app:showAsAction="never" />
 

@@ -192,12 +192,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSavedFilesDialog() {
         val entries = UploadHistoryStore.readAll(this).takeLast(20).asReversed()
-        val message = if (entries.isEmpty()) {
-            "아직 저장된 파일이 없습니다.\n녹음 후 업로드가 성공하면 여기에 최근 파일 기록이 표시됩니다."
-        } else {
-            buildString {
-                appendLine("최근 업로드된 파일")
-                appendLine()
+        val pendingFiles = listLocalRecordingFiles().takeLast(20).asReversed()
+        val message = buildString {
+            appendLine("로컬에 남아 있는 음성파일")
+            if (pendingFiles.isEmpty()) {
+                appendLine("- 없음")
+            } else {
+                pendingFiles.forEachIndexed { index, file ->
+                    appendLine("${index + 1}. ${file.name}")
+                }
+            }
+            appendLine()
+            appendLine("업로드 히스토리")
+            if (entries.isEmpty()) {
+                appendLine("- 아직 업로드된 파일이 없습니다.")
+            } else {
                 entries.forEachIndexed { index, entry ->
                     appendLine("${index + 1}. ${entry.fileName}")
                     appendLine("   세션: ${entry.sessionId}")
@@ -234,6 +243,15 @@ class MainActivity : AppCompatActivity() {
             .setMessage(message)
             .setPositiveButton("닫기", null)
             .show()
+    }
+
+    private fun listLocalRecordingFiles(): List<java.io.File> {
+        val root = java.io.File(cacheDir, "voice-journal")
+        if (!root.exists()) return emptyList()
+        return root.walkTopDown()
+            .filter { it.isFile && it.extension.equals("m4a", ignoreCase = true) }
+            .sortedByDescending { it.lastModified() }
+            .toList()
     }
 
     private fun beginVoiceMonitoring() {
