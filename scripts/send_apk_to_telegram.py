@@ -4,6 +4,10 @@
 Usage:
   TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... \
     python scripts/send_apk_to_telegram.py /path/to/app.apk
+
+Notes:
+  - TELEGRAM_CHAT_ID should be the numeric chat ID for @OngHermes_AI_bot.
+  - Bot token is provided at runtime and must not be committed.
 """
 
 from __future__ import annotations
