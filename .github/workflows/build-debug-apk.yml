@@ -9,6 +9,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-debug-apk:
     runs-on: ubuntu-latest
@@ -90,3 +93,38 @@ jobs:
         if: ${{ env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' }}
         run: |
           python3 scripts/send_apk_to_telegram.py dist/app-debug.apk
+
+  github-release:
+    runs-on: ubuntu-latest
+    needs: build-debug-apk
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Ai_voice_assistant-debug-apk
+          path: dist
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: Ai_voice_assistant nightly
+          target_commitish: ${{ github.sha }}
+          prerelease: false
+          make_latest: true
+          draft: false
+          overwrite_files: true
+          files: |
+            dist/app-debug.apk
+          body: |
+            Automated debug APK build from commit ${{ github.sha }}.
+
+            Install this APK on the phone to update the app.
+            Open the app menu → "업데이트 확인" to reach this release page.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
