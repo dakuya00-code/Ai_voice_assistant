@@ -228,38 +228,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showUpdateAvailableDialog(release: ReleaseInfo) {
-        val message = buildString {
-            appendLine("새 업데이트가 있습니다.")
-            appendLine()
-            appendLine("릴리스: ${release.name.ifBlank { release.tagName.ifBlank { "latest" } }}")
-            appendLine("게시일: ${release.publishedAt}")
-            appendLine()
-            if (release.body.isNotBlank()) {
-                appendLine(release.body.trim())
-            } else {
-                appendLine("새 APK를 받아 설치해 주세요.")
-            }
-        }
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle("업데이트 알림")
-            .setMessage(message)
-            .setPositiveButton("지금 열기") { _, _ ->
-                openUrl(release.htmlUrl.ifBlank { UPDATE_URL })
-            }
-            .setNegativeButton("나중에", null)
-            .show()
-    }
-
-    private data class ReleaseInfo(
-        val tagName: String,
-        val name: String,
-        val publishedAt: String,
-        val htmlUrl: String,
-        val body: String,
-    )
-
     private fun showSavedFilesDialog() {
         val entries = UploadHistoryStore.readAll(this).takeLast(20).asReversed()
         val pendingFiles = listLocalRecordingFiles().takeLast(20).asReversed()
