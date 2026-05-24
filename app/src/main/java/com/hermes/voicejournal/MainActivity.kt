@@ -5,6 +5,9 @@ import android.content.DialogInterface
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.Menu
@@ -20,9 +23,6 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 
 class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
@@ -64,14 +64,14 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             hapticSuccess(startButton)
-            beginRecording()
+            beginVoiceMonitoring()
         }
 
         stopButton.setOnClickListener {
             hapticStop(stopButton)
             RecordingService.stop(this)
             statusText.text = "정지 요청됨"
-            toast("녹음을 정지했습니다.")
+            toast("음성 감지를 정지했습니다.")
         }
 
         ensurePermissions()
@@ -103,17 +103,17 @@ class MainActivity : AppCompatActivity() {
         val view = LayoutInflater.from(this).inflate(R.layout.dialog_recording_settings, null, false)
         val serverUrlLayout = view.findViewById<TextInputLayout>(R.id.serverUrlLayout)
         val uploadPathLayout = view.findViewById<TextInputLayout>(R.id.uploadPathLayout)
-        val chunkMinutesLayout = view.findViewById<TextInputLayout>(R.id.chunkMinutesLayout)
+        val silenceTimeoutLayout = view.findViewById<TextInputLayout>(R.id.silenceTimeoutLayout)
         val sessionLabelLayout = view.findViewById<TextInputLayout>(R.id.sessionLabelLayout)
         val serverUrlInput = view.findViewById<TextInputEditText>(R.id.serverUrlInput)
         val uploadPathInput = view.findViewById<TextInputEditText>(R.id.uploadPathInput)
-        val chunkMinutesInput = view.findViewById<TextInputEditText>(R.id.chunkMinutesInput)
+        val silenceTimeoutInput = view.findViewById<TextInputEditText>(R.id.silenceTimeoutInput)
         val sessionLabelInput = view.findViewById<TextInputEditText>(R.id.sessionLabelInput)
 
         val current = Prefs.load(this)
         serverUrlInput.setText(current.serverUrl)
         uploadPathInput.setText(current.uploadPath)
-        chunkMinutesInput.setText(current.chunkMinutes.toString())
+        silenceTimeoutInput.setText(current.silenceTimeoutSeconds.toString())
         sessionLabelInput.setText(current.sessionLabel)
 
         val dialog = MaterialAlertDialogBuilder(this)
@@ -128,13 +128,13 @@ class MainActivity : AppCompatActivity() {
             dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
                 serverUrlLayout.error = null
                 uploadPathLayout.error = null
-                chunkMinutesLayout.error = null
+                silenceTimeoutLayout.error = null
                 sessionLabelLayout.error = null
 
                 val cfg = RecordingConfig(
                     serverUrl = serverUrlInput.text?.toString().orEmpty().trim(),
                     uploadPath = uploadPathInput.text?.toString().orEmpty().trim().ifBlank { "/api/upload" },
-                    chunkMinutes = chunkMinutesInput.text?.toString().orEmpty().trim().toIntOrNull()?.coerceAtLeast(1) ?: 60,
+                    silenceTimeoutSeconds = silenceTimeoutInput.text?.toString().orEmpty().trim().toIntOrNull()?.coerceIn(5, 120) ?: 15,
                     sessionLabel = sessionLabelInput.text?.toString().orEmpty().trim().ifBlank { "workday" },
                 )
 
@@ -146,13 +146,13 @@ class MainActivity : AppCompatActivity() {
                 Prefs.save(this, cfg)
                 Prefs.setSetupComplete(this, true)
                 refreshConfigSummary()
-                statusText.text = "설정 저장됨 · ${cfg.chunkMinutes}분마다 업로드"
+                statusText.text = "설정 저장됨 · 무음 ${cfg.silenceTimeoutSeconds}초 후 종료"
                 toast("설정을 저장했습니다.")
                 dialog.dismiss()
 
                 if (pendingStartAfterSetup) {
                     pendingStartAfterSetup = false
-                    beginRecording()
+                    beginVoiceMonitoring()
                 }
             }
         }
@@ -160,11 +160,11 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun beginRecording() {
+    private fun beginVoiceMonitoring() {
         val cfg = Prefs.load(this)
         RecordingService.start(this)
-        statusText.text = "녹음 시작됨 · ${cfg.chunkMinutes}분마다 업로드"
-        toast("녹음을 시작했습니다.")
+        statusText.text = "음성 감지 대기 중 · 무음 ${cfg.silenceTimeoutSeconds}초 후 종료"
+        toast("음성 감지를 시작했습니다.")
     }
 
     private fun refreshConfigSummary() {
@@ -173,14 +173,14 @@ class MainActivity : AppCompatActivity() {
             appendLine("현재 설정")
             appendLine("- 서버 URL: ${config.serverUrl}")
             appendLine("- 업로드 경로: ${config.uploadPath}")
-            appendLine("- 청크 길이: ${config.chunkMinutes}분")
+            appendLine("- 무음 종료 시간: ${config.silenceTimeoutSeconds}초")
             appendLine("- 세션 이름: ${config.sessionLabel}")
             appendLine()
             appendLine(if (Prefs.isSetupComplete(this@MainActivity)) "설정 완료 · 메뉴에서 다시 수정할 수 있습니다." else "초기 설정이 필요합니다. 오른쪽 위 메뉴에서도 다시 열 수 있습니다.")
         }
         configSummaryText.text = summary
         if (statusText.text.isNullOrBlank() || statusText.text.toString() == "대기 중") {
-            statusText.text = if (Prefs.isSetupComplete(this)) "대기 중" else "초기 설정 필요"
+            statusText.text = if (Prefs.isSetupComplete(this)) "음성 감지 대기 중" else "초기 설정 필요"
         }
     }
 

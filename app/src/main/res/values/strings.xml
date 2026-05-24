@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">Ai Voice Assistant</string>
-    <string name="start_recording">녹음 시작</string>
-    <string name="stop_recording">녹음 정지</string>
+    <string name="start_recording">음성 감지 시작</string>
+    <string name="stop_recording">중지</string>
     <string name="menu_settings">설정</string>
     <string name="settings_title">설정</string>
     <string name="first_run_title">초기 설정</string>

@@ -7,6 +7,8 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.media.AudioFormat
+import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
@@ -31,12 +33,11 @@ class RecordingService : Service() {
     private val uploadClient = UploadClient()
 
     private var activeJob: Job? = null
-    private var recorder: MediaRecorder? = null
     private var isRunning = false
     private var currentSessionId: String = ""
-    private var currentChunkIndex = 0
-    private var currentRecordingFile: File? = null
-    private var currentChunkStartedAtMs: Long = 0L
+    private var currentSegmentIndex = 0
+    private var monitorRecorder: AudioRecord? = null
+    private var meetingRecorder: MediaRecorder? = null
     private var config: RecordingConfig? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -58,9 +59,9 @@ class RecordingService : Service() {
         if (isRunning) return
         config = Prefs.load(this)
         currentSessionId = buildSessionId(config?.sessionLabel ?: "workday")
-        currentChunkIndex = 0
+        currentSegmentIndex = 0
         isRunning = true
-        startForeground(NOTIFICATION_ID, buildNotification("녹음 준비 중"))
+        startForeground(NOTIFICATION_ID, buildNotification("음성 감지 대기 중"))
 
         activeJob = serviceScope.launch {
             runLoop()
@@ -69,81 +70,190 @@ class RecordingService : Service() {
 
     private fun handleStop() {
         isRunning = false
-        activeJob?.cancel()
-        activeJob = null
-        stopRecorderSafely()
-        stopForeground(true)
-        stopSelf()
+        runCatching { monitorRecorder?.stop() }
+        runCatching { meetingRecorder?.stop() }
+        updateNotification("정지 중")
     }
 
     private suspend fun runLoop() {
         val cfg = config ?: return
-        while (isRunning) {
-            val file = createChunkFile()
-            currentRecordingFile = file
-            currentChunkStartedAtMs = System.currentTimeMillis()
+        val detector = VoiceActivityDetector(
+            startThreshold = 1_500,
+            requiredStartSamples = 2,
+            silenceTimeoutMs = cfg.silenceTimeoutSeconds * 1_000L,
+            minRecordingDurationMs = 3_000,
+            stopThreshold = 900,
+        )
 
-            startRecorder(file)
-            updateNotification("기록 중 · 청크 ${currentChunkIndex + 1}")
-
-            delay(cfg.chunkMinutes * 60_000L)
-
-            stopRecorderSafely()
-            val durationSeconds = ((System.currentTimeMillis() - currentChunkStartedAtMs) / 1000L).coerceAtLeast(1L)
-            updateNotification("전송 중 · 청크 ${currentChunkIndex + 1}")
-
-            val uploadResult = uploadClient.uploadChunk(
-                serverUrl = cfg.serverUrl,
-                uploadPath = cfg.uploadPath,
-                sessionId = currentSessionId,
-                chunkIndex = currentChunkIndex,
-                durationSeconds = durationSeconds,
-                startedAtIso = isoNow(currentChunkStartedAtMs),
-                file = file,
-            )
-
-            if (uploadResult.isSuccess) {
-                file.delete()
-                currentChunkIndex += 1
-                if (isRunning) {
-                    updateNotification("다음 청크 준비 중")
+        try {
+            while (isRunning) {
+                updateNotification("음성 감지 대기 중")
+                val detected = monitorForVoice(detector)
+                if (!isRunning) break
+                if (!detected) {
+                    delay(500)
+                    continue
                 }
-            } else {
-                updateNotification("업로드 실패 · 파일 보관 중")
+                recordMeetingSegment(detector)
             }
+        } finally {
+            stopMonitorRecorder()
+            stopMeetingRecorder()
+            stopForeground(true)
+            stopSelf()
         }
     }
 
-    private fun startRecorder(file: File) {
+    private suspend fun monitorForVoice(detector: VoiceActivityDetector): Boolean {
+        val recorder = createMonitorRecorder() ?: return false
+        monitorRecorder = recorder
+        val buffer = ShortArray(2048)
+
+        return try {
+            recorder.startRecording()
+            while (isRunning) {
+                val read = recorder.read(buffer, 0, buffer.size)
+                if (read <= 0) continue
+                val amplitude = averageAmplitude(buffer, read)
+                when (detector.observe(amplitude, System.currentTimeMillis())) {
+                    VoiceActivityEvent.StartRecording -> return true
+                    else -> Unit
+                }
+            }
+            false
+        } catch (_: IllegalStateException) {
+            false
+        } finally {
+            stopMonitorRecorder()
+        }
+    }
+
+    private suspend fun recordMeetingSegment(detector: VoiceActivityDetector) {
+        val cfg = config ?: return
+        val file = createSegmentFile()
+        val recorder = createMeetingRecorder(file) ?: run {
+            detector.reset()
+            return
+        }
+        meetingRecorder = recorder
+        val startedAtMs = System.currentTimeMillis()
+
+        try {
+            recorder.start()
+            updateNotification("회의 녹음 중 · 무음 ${cfg.silenceTimeoutSeconds}초 후 종료")
+            while (isRunning) {
+                val amplitude = runCatching { recorder.maxAmplitude }.getOrDefault(0)
+                when (detector.observe(amplitude, System.currentTimeMillis())) {
+                    VoiceActivityEvent.StopRecording -> break
+                    else -> Unit
+                }
+                delay(500)
+            }
+        } finally {
+            stopMeetingRecorder()
+        }
+
+        if (!file.exists()) return
+        val durationSeconds = ((System.currentTimeMillis() - startedAtMs) / 1000L).coerceAtLeast(1L)
+        if (durationSeconds < 3) {
+            file.delete()
+            return
+        }
+
+        updateNotification("전송 중 · 회의 녹음 업로드")
+        val uploadResult = uploadClient.uploadChunk(
+            serverUrl = cfg.serverUrl,
+            uploadPath = cfg.uploadPath,
+            sessionId = currentSessionId,
+            chunkIndex = currentSegmentIndex,
+            durationSeconds = durationSeconds,
+            startedAtIso = isoNow(startedAtMs),
+            file = file,
+        )
+
+        if (uploadResult.isSuccess) {
+            file.delete()
+            currentSegmentIndex += 1
+            if (isRunning) {
+                updateNotification("음성 감지 대기 중")
+            }
+        } else {
+            updateNotification("업로드 실패 · 파일 보관 중")
+        }
+    }
+
+    private fun createMonitorRecorder(): AudioRecord? {
+        val sampleRate = 16_000
+        val minBufferSize = AudioRecord.getMinBufferSize(
+            sampleRate,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+        )
+        if (minBufferSize <= 0) return null
+        val bufferSize = minBufferSize.coerceAtLeast(4_096)
+        return AudioRecord.Builder()
+            .setAudioSource(MediaRecorder.AudioSource.MIC)
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setSampleRate(sampleRate)
+                    .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .build()
+            )
+            .setBufferSizeInBytes(bufferSize)
+            .build()
+    }
+
+    private fun createMeetingRecorder(file: File): MediaRecorder? {
         val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             MediaRecorder(this)
         } else {
             @Suppress("DEPRECATION")
             MediaRecorder()
         }
-        this.recorder = recorder
-        recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
-        recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-        recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-        recorder.setAudioEncodingBitRate(128_000)
-        recorder.setAudioSamplingRate(44_100)
-        recorder.setOutputFile(file.absolutePath)
-        recorder.prepare()
-        recorder.start()
+        return try {
+            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            recorder.setAudioEncodingBitRate(128_000)
+            recorder.setAudioSamplingRate(44_100)
+            recorder.setOutputFile(file.absolutePath)
+            recorder.prepare()
+            recorder
+        } catch (_: Exception) {
+            runCatching { recorder.release() }
+            null
+        }
     }
 
-    private fun stopRecorderSafely() {
-        val current = recorder ?: return
-        runCatching { current.stop() }
-        runCatching { current.reset() }
-        runCatching { current.release() }
-        recorder = null
+    private fun averageAmplitude(samples: ShortArray, read: Int): Int {
+        if (read <= 0) return 0
+        var sum = 0L
+        for (i in 0 until read) {
+            sum += kotlin.math.abs(samples[i].toInt())
+        }
+        return (sum / read).toInt()
     }
 
-    private fun createChunkFile(): File {
+    private fun stopMonitorRecorder() {
+        val recorder = monitorRecorder ?: return
+        runCatching { recorder.stop() }
+        runCatching { recorder.release() }
+        monitorRecorder = null
+    }
+
+    private fun stopMeetingRecorder() {
+        val recorder = meetingRecorder ?: return
+        runCatching { recorder.stop() }
+        runCatching { recorder.reset() }
+        runCatching { recorder.release() }
+        meetingRecorder = null
+    }
+
+    private fun createSegmentFile(): File {
         val baseDir = File(cacheDir, "voice-journal/$currentSessionId").apply { mkdirs() }
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        return File(baseDir, "chunk_${currentChunkIndex.toString().padStart(4, '0')}_$stamp.m4a")
+        return File(baseDir, "meeting_${currentSegmentIndex.toString().padStart(4, '0')}_$stamp.m4a")
     }
 
     private fun buildNotification(content: String): Notification {
@@ -215,7 +325,8 @@ class RecordingService : Service() {
     }
 
     override fun onDestroy() {
-        stopRecorderSafely()
+        stopMonitorRecorder()
+        stopMeetingRecorder()
         serviceScope.cancel()
         super.onDestroy()
     }
