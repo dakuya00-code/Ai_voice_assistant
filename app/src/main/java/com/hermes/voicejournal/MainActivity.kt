@@ -2,7 +2,9 @@ package com.hermes.voicejournal
 
 import android.Manifest
 import android.content.DialogInterface
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
@@ -25,6 +27,10 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 
 class MainActivity : AppCompatActivity() {
+    companion object {
+        private const val UPDATE_URL = "https://github.com/dakuya00-code/Ai_voice_assistant/releases"
+    }
+
     private lateinit var statusText: TextView
     private lateinit var configSummaryText: TextView
     private lateinit var recordingUsageText: TextView
@@ -99,6 +105,10 @@ class MainActivity : AppCompatActivity() {
             }
             R.id.menu_saved_files -> {
                 showSavedFilesDialog()
+                true
+            }
+            R.id.menu_check_update -> {
+                showUpdateDialog()
                 true
             }
             R.id.menu_install_guide -> {
@@ -205,6 +215,25 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showUpdateDialog() {
+        val currentVersion = BuildConfig.VERSION_NAME
+        val message = buildString {
+            appendLine("현재 설치 버전: v$currentVersion")
+            appendLine()
+            appendLine("업데이트가 필요하면 아래 버튼으로 GitHub Releases 페이지를 열어 최신 APK를 받으세요.")
+            appendLine("설치 후에는 기존 설정이 유지되고, 앱에서 바로 다시 시작할 수 있습니다.")
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.update_title)
+            .setMessage(message)
+            .setPositiveButton("업데이트 페이지 열기") { _, _ ->
+                openUrl(UPDATE_URL)
+            }
+            .setNegativeButton("닫기", null)
+            .show()
+    }
+
     private fun showInstallGuideDialog() {
         val message = buildString {
             appendLine("설치/세팅 안내")
@@ -217,6 +246,7 @@ class MainActivity : AppCompatActivity() {
             appendLine("6. 중지 버튼 = 감지 완전 종료(진행 중 조각 업로드 후 종료)")
             appendLine("7. 권한(마이크/알림) 허용")
             appendLine("8. 삼성 배터리 최적화에서 제외하면 안정적")
+            appendLine("9. 업데이트는 오른쪽 위 메뉴의 '업데이트 확인'에서 확인")
         }
 
         MaterialAlertDialogBuilder(this)
@@ -224,6 +254,14 @@ class MainActivity : AppCompatActivity() {
             .setMessage(message)
             .setPositiveButton("닫기", null)
             .show()
+    }
+
+    private fun openUrl(url: String) {
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }.onFailure {
+            toast("업데이트 페이지를 열 수 없습니다.")
+        }
     }
 
     private fun listLocalRecordingFiles(): List<java.io.File> {
