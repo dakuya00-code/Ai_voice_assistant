@@ -11,6 +11,13 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
+data class UploadResult(
+    val savedPath: String?,
+    val transcriptPath: String?,
+    val audioDeleted: Boolean,
+    val audioDeleteError: String?,
+)
+
 class UploadClient {
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -26,7 +33,7 @@ class UploadClient {
         durationSeconds: Long,
         startedAtIso: String,
         file: File,
-    ): Result<Unit> = withContext(Dispatchers.IO) {
+    ): Result<UploadResult> = withContext(Dispatchers.IO) {
         runCatching {
             val url = buildUploadUrl(serverUrl, uploadPath)
             val body = MultipartBody.Builder()
@@ -48,9 +55,17 @@ class UploadClient {
                 .build()
 
             client.newCall(request).execute().use { response ->
+                val responseText = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
-                    error("upload failed: HTTP ${response.code}")
+                    error("upload failed: HTTP ${response.code} ${responseText.trim()}")
                 }
+                val json = org.json.JSONObject(responseText)
+                UploadResult(
+                    savedPath = json.optString("saved_path").ifBlank { null },
+                    transcriptPath = json.optString("transcript_path").ifBlank { null },
+                    audioDeleted = json.optBoolean("audio_deleted", false),
+                    audioDeleteError = json.optString("audio_delete_error").ifBlank { null },
+                )
             }
         }
     }

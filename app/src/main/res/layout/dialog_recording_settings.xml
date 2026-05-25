@@ -36,21 +36,6 @@
     </com.google.android.material.textfield.TextInputLayout>
 
     <com.google.android.material.textfield.TextInputLayout
-        android:id="@+id/silenceTimeoutLayout"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:hint="무음 종료 시간(초)">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/silenceTimeoutInput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="number"
-            android:text="15" />
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/sessionLabelLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

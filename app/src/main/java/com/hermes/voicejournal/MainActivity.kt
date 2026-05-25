@@ -135,22 +135,19 @@ class MainActivity : AppCompatActivity() {
         val view = LayoutInflater.from(this).inflate(R.layout.dialog_recording_settings, null, false)
         val serverUrlLayout = view.findViewById<TextInputLayout>(R.id.serverUrlLayout)
         val uploadPathLayout = view.findViewById<TextInputLayout>(R.id.uploadPathLayout)
-        val silenceTimeoutLayout = view.findViewById<TextInputLayout>(R.id.silenceTimeoutLayout)
         val sessionLabelLayout = view.findViewById<TextInputLayout>(R.id.sessionLabelLayout)
         val serverUrlInput = view.findViewById<TextInputEditText>(R.id.serverUrlInput)
         val uploadPathInput = view.findViewById<TextInputEditText>(R.id.uploadPathInput)
-        val silenceTimeoutInput = view.findViewById<TextInputEditText>(R.id.silenceTimeoutInput)
         val sessionLabelInput = view.findViewById<TextInputEditText>(R.id.sessionLabelInput)
 
         val current = Prefs.load(this)
         serverUrlInput.setText(current.serverUrl.ifBlank { "http://187.77.115.121:8799" })
         uploadPathInput.setText(current.uploadPath.ifBlank { "/api/upload" })
-        silenceTimeoutInput.setText(current.silenceTimeoutSeconds.takeIf { it > 0 }?.toString() ?: "15")
         sessionLabelInput.setText(current.sessionLabel.ifBlank { "workday" })
 
         val dialog = MaterialAlertDialogBuilder(this)
             .setTitle(if (firstRun) getString(R.string.first_run_title) else getString(R.string.settings_title))
-            .setMessage(if (firstRun) "처음 실행할 때는 기본값이 미리 들어가 있으니, 서버 주소만 확인하고 바로 저장하시면 됩니다." else null)
+            .setMessage(if (firstRun) "처음 실행할 때는 서버 주소만 확인하고 바로 저장하시면 됩니다. 녹음은 07:00~20:00에만 돌고, 업로드는 1시간 단위로 묶어서 올라갑니다." else null)
             .setView(view)
             .setNegativeButton("취소", null)
             .setPositiveButton("저장", null)
@@ -160,13 +157,11 @@ class MainActivity : AppCompatActivity() {
             dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
                 serverUrlLayout.error = null
                 uploadPathLayout.error = null
-                silenceTimeoutLayout.error = null
                 sessionLabelLayout.error = null
 
                 val cfg = RecordingConfig(
                     serverUrl = serverUrlInput.text?.toString().orEmpty().trim(),
                     uploadPath = uploadPathInput.text?.toString().orEmpty().trim().ifBlank { "/api/upload" },
-                    silenceTimeoutSeconds = silenceTimeoutInput.text?.toString().orEmpty().trim().toIntOrNull()?.coerceIn(5, 120) ?: 15,
                     sessionLabel = sessionLabelInput.text?.toString().orEmpty().trim().ifBlank { "workday" },
                 )
 
@@ -178,7 +173,7 @@ class MainActivity : AppCompatActivity() {
                 Prefs.save(this, cfg)
                 Prefs.setSetupComplete(this, true)
                 refreshConfigSummary()
-                statusText.text = "설정 저장됨 · 무음 ${cfg.silenceTimeoutSeconds}초 후 종료"
+                statusText.text = "설정 저장됨 · 1시간 단위 업로드 / 07:00~20:00 녹음"
                 toast("설정을 저장했습니다.")
                 dialog.dismiss()
 
@@ -254,6 +249,7 @@ class MainActivity : AppCompatActivity() {
                 )
 
                 if (result.isSuccess) {
+                    val uploadInfo = result.getOrNull()
                     UploadHistoryStore.append(
                         this@MainActivity,
                         UploadedFileEntry(
@@ -268,6 +264,9 @@ class MainActivity : AppCompatActivity() {
                     runCatching { file.delete() }
                     runCatching { File(file.parentFile, "${file.nameWithoutExtension}.json").delete() }
                     successCount += 1
+                    uploadInfo?.let {
+                        logUploadDestination(file.name, it.savedPath, it.transcriptPath, it.audioDeleted, it.audioDeleteError)
+                    }
                 } else {
                     failureCount += 1
                     failedNames += file.name
@@ -365,12 +364,13 @@ class MainActivity : AppCompatActivity() {
             appendLine("1. 앱 설치 후 실행")
             appendLine("2. 첫 실행 설정에서 VPS 주소 입력")
             appendLine("3. 업로드 경로는 /api/upload 유지")
-            appendLine("4. 무음 종료 시간은 15초 권장")
-            appendLine("5. 시작 버튼 = 음성감지 시작")
-            appendLine("6. 중지 버튼 = 감지 완전 종료(진행 중 조각 업로드 후 종료)")
-            appendLine("7. 권한(마이크/알림) 허용")
-            appendLine("8. 삼성 배터리 최적화에서 제외하면 안정적")
-            appendLine("9. 업데이트는 오른쪽 위 메뉴의 '업데이트 확인'에서 확인")
+            appendLine("4. 녹음은 07:00~20:00 사이에만 동작")
+            appendLine("5. 업로드는 1시간 단위로 묶어서 전송")
+            appendLine("6. 시작 버튼 = 1시간 단위 녹음/업로드 시작")
+            appendLine("7. 중지 버튼 = 진행 중인 조각을 마무리한 뒤 종료")
+            appendLine("8. 권한(마이크/알림) 허용")
+            appendLine("9. 삼성 배터리 최적화에서 제외하면 안정적")
+            appendLine("10. 업데이트는 오른쪽 위 메뉴의 '업데이트 확인'에서 확인")
         }
 
         MaterialAlertDialogBuilder(this)
@@ -390,28 +390,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun beginVoiceMonitoring() {
-        val cfg = Prefs.load(this)
         RecordingService.start(this)
-        statusText.text = "음성감지 대기 중 · 한 번 켜면 계속 감지합니다 · 사람이 말하면 자동 녹음 · 무음 ${cfg.silenceTimeoutSeconds}초 후 업로드"
-        toast("음성감지를 시작했습니다. 사람 목소리를 감지하면 자동으로 녹음합니다.")
+        statusText.text = "1시간 단위 녹음/업로드 시작 · 07:00~20:00에만 녹음"
+        toast("녹음을 시작했습니다. 1시간 단위로 업로드하고, 07:00~20:00에만 녹음합니다.")
     }
 
     private fun refreshConfigSummary() {
         val config = Prefs.load(this)
-        val usage = "시작: 음성감지를 켭니다. 한 번 켜면 사용자가 중지할 때까지 계속 감지합니다. 사람이 말하면 자동으로 녹음하고, 무음 ${config.silenceTimeoutSeconds}초가 지속되면 그 조각을 업로드한 뒤 다시 대기합니다.\n중지: 음성감지를 완전히 종료합니다. 진행 중인 조각이 있으면 마무리 후 업로드하고 멈춥니다."
+        val usage = "시작: 서비스를 켜면 07:00~20:00 동안 1시간 단위로 녹음/업로드합니다.\n중지: 진행 중인 1시간 조각을 마무리한 뒤 완전히 종료합니다."
         recordingUsageText.text = usage
         val summary = buildString {
             appendLine("현재 설정")
             appendLine("- 서버 URL: ${config.serverUrl}")
             appendLine("- 업로드 경로: ${config.uploadPath}")
-            appendLine("- 무음 종료 시간: ${config.silenceTimeoutSeconds}초")
             appendLine("- 세션 이름: ${config.sessionLabel}")
+            appendLine("- 녹음 시간: 07:00~20:00")
+            appendLine("- 업로드 단위: 1시간")
+            appendLine("- 전사 키: 서버의 Gemini API 키")
             appendLine()
             appendLine(if (Prefs.isSetupComplete(this@MainActivity)) "설정 완료 · 메뉴에서 다시 수정할 수 있습니다." else "초기 설정이 필요합니다. 오른쪽 위 메뉴에서도 다시 열 수 있습니다.")
         }
         configSummaryText.text = summary
         if (statusText.text.isNullOrBlank() || statusText.text.toString() == "대기 중") {
-            statusText.text = if (Prefs.isSetupComplete(this)) "음성 감지 대기 중" else "초기 설정 필요"
+            statusText.text = if (Prefs.isSetupComplete(this)) "1시간 단위 업로드 대기 중" else "초기 설정 필요"
         }
     }
 
@@ -466,6 +467,24 @@ class MainActivity : AppCompatActivity() {
             @Suppress("DEPRECATION")
             vibrator?.vibrate(durationMs)
         }
+    }
+
+    private fun logUploadDestination(
+        fileName: String,
+        savedPath: String?,
+        transcriptPath: String?,
+        audioDeleted: Boolean,
+        audioDeleteError: String?,
+    ) {
+        val details = buildString {
+            appendLine("서버 저장 확인: $fileName")
+            appendLine("- saved_path: ${savedPath ?: "(없음)"}")
+            appendLine("- transcript_path: ${transcriptPath ?: "(없음)"}")
+            appendLine("- audio_deleted: $audioDeleted")
+            appendLine("- audio_delete_error: ${audioDeleteError ?: "(없음)"}")
+        }
+        statusText.text = "전송 완료 · 서버 저장 위치 확인"
+        configSummaryText.text = configSummaryText.text.toString() + "\n\n" + details
     }
 
     private fun toast(message: String) {

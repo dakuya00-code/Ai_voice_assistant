@@ -75,77 +75,60 @@ class RecordingService : Service() {
         updateNotification("정지 중")
     }
 
-    private suspend fun runLoop() {
-        val cfg = config ?: return
-        val detector = VoiceActivityDetector(
-            startThreshold = 1_500,
-            requiredStartSamples = 2,
-            silenceTimeoutMs = cfg.silenceTimeoutSeconds * 1_000L,
-            minRecordingDurationMs = 3_000,
-            stopThreshold = 900,
-        )
+    private fun withinWorkHours(nowMs: Long = System.currentTimeMillis()): Boolean {
+        val calendar = java.util.Calendar.getInstance().apply { timeInMillis = nowMs }
+        val hour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
+        return hour >= WORK_START_HOUR && hour < WORK_END_HOUR
+    }
 
+    private fun workEndAt(nowMs: Long = System.currentTimeMillis()): Long {
+        val calendar = java.util.Calendar.getInstance().apply {
+            timeInMillis = nowMs
+            set(java.util.Calendar.HOUR_OF_DAY, WORK_END_HOUR)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        return calendar.timeInMillis
+    }
+
+    private suspend fun runLoop() {
         try {
             while (isRunning) {
-                updateNotification("음성 감지 대기 중")
-                val detected = monitorForVoice(detector)
-                if (!isRunning) break
-                if (!detected) {
-                    delay(500)
+                if (!withinWorkHours()) {
+                    updateNotification("업무 시간 대기 중 · 07:00~20:00")
+                    delay(60_000)
                     continue
                 }
-                recordMeetingSegment(detector)
+                recordTimedChunk()
+                if (isRunning) {
+                    delay(1_000)
+                }
             }
         } finally {
-            stopMonitorRecorder()
             stopMeetingRecorder()
             stopForeground(true)
             stopSelf()
         }
     }
 
-    private suspend fun monitorForVoice(detector: VoiceActivityDetector): Boolean {
-        val recorder = createMonitorRecorder() ?: return false
-        monitorRecorder = recorder
-        val buffer = ShortArray(2048)
-
-        return try {
-            recorder.startRecording()
-            while (isRunning) {
-                val read = recorder.read(buffer, 0, buffer.size)
-                if (read <= 0) continue
-                val amplitude = averageAmplitude(buffer, read)
-                when (detector.observe(amplitude, System.currentTimeMillis())) {
-                    VoiceActivityEvent.StartRecording -> return true
-                    else -> Unit
-                }
-            }
-            false
-        } catch (_: IllegalStateException) {
-            false
-        } finally {
-            stopMonitorRecorder()
-        }
-    }
-
-    private suspend fun recordMeetingSegment(detector: VoiceActivityDetector) {
+    private suspend fun recordTimedChunk() {
         val cfg = config ?: return
-        val file = createSegmentFile()
-        val recorder = createMeetingRecorder(file) ?: run {
-            detector.reset()
-            return
-        }
-        meetingRecorder = recorder
         val startedAtMs = System.currentTimeMillis()
+        val chunkStopAtMs = minOf(startedAtMs + MAX_SEGMENT_DURATION_MS, workEndAt(startedAtMs))
+        if (chunkStopAtMs <= startedAtMs) return
+
+        val file = createSegmentFile()
+        val recorder = createMeetingRecorder(file) ?: return
+        meetingRecorder = recorder
 
         try {
             recorder.start()
-            updateNotification("회의 녹음 중 · 무음 ${cfg.silenceTimeoutSeconds}초 후 종료")
+            updateNotification("회의 녹음 중 · 1시간 단위 업로드")
             while (isRunning) {
-                val amplitude = runCatching { recorder.maxAmplitude }.getOrDefault(0)
-                when (detector.observe(amplitude, System.currentTimeMillis())) {
-                    VoiceActivityEvent.StopRecording -> break
-                    else -> Unit
+                val nowMs = System.currentTimeMillis()
+                if (!withinWorkHours(nowMs) || nowMs >= chunkStopAtMs) {
+                    break
                 }
                 delay(500)
             }
@@ -160,7 +143,7 @@ class RecordingService : Service() {
             return
         }
 
-        updateNotification("전송 중 · 회의 녹음 업로드")
+        updateNotification("전송 중 · 1시간 녹음 업로드")
         val uploadResult = uploadClient.uploadChunk(
             serverUrl = cfg.serverUrl,
             uploadPath = cfg.uploadPath,
@@ -172,6 +155,7 @@ class RecordingService : Service() {
         )
 
         if (uploadResult.isSuccess) {
+            val result = uploadResult.getOrNull()
             UploadHistoryStore.append(
                 this,
                 UploadedFileEntry(
@@ -186,7 +170,10 @@ class RecordingService : Service() {
             file.delete()
             currentSegmentIndex += 1
             if (isRunning) {
-                updateNotification("음성 감지 대기 중")
+                updateNotification("다음 1시간 녹음 대기 중")
+            }
+            if (result != null && (result.savedPath != null || result.transcriptPath != null)) {
+                updateNotification("전송 완료 · ${result.savedPath ?: "저장 경로 확인"}")
             }
         } else {
             updateNotification("업로드 실패 · 파일 보관 중")
@@ -343,6 +330,9 @@ class RecordingService : Service() {
     }
 
     companion object {
+        private const val WORK_START_HOUR = 7
+        private const val WORK_END_HOUR = 20
+        private const val MAX_SEGMENT_DURATION_MS = 60 * 60 * 1000L
         const val ACTION_START = "com.hermes.voicejournal.action.START"
         const val ACTION_STOP = "com.hermes.voicejournal.action.STOP"
         const val CHANNEL_ID = "voice_journal_recording"
