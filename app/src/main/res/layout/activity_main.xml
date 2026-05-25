@@ -40,7 +40,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="업무용 녹음 · 07:00~20:00 / 1시간 업로드"
+                android:text="업무용 음성 감지 · 07:00~20:00 / VAD 세그먼트 업로드"
                 android:textColor="#B3FFFFFF" />
 
             <com.google.android.material.card.MaterialCardView

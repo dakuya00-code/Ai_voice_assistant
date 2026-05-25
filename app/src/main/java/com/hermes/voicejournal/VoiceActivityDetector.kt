@@ -1,11 +1,11 @@
 package com.hermes.voicejournal
 
 class VoiceActivityDetector(
-    private val startThreshold: Int = 1_000,
+    private val startThreshold: Int = 800,
     private val requiredStartSamples: Int = 3,
-    private val silenceTimeoutMs: Long = 15_000,
-    private val minRecordingDurationMs: Long = 3_000,
-    private val stopThreshold: Int = 700,
+    private val silenceTimeoutMs: Long = 2_500,
+    private val minRecordingDurationMs: Long = 1_200,
+    private val stopThreshold: Int = 500,
 ) {
     private enum class Mode { Listening, Recording }
 

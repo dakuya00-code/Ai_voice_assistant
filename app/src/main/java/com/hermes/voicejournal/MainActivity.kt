@@ -147,7 +147,7 @@ class MainActivity : AppCompatActivity() {
 
         val dialog = MaterialAlertDialogBuilder(this)
             .setTitle(if (firstRun) getString(R.string.first_run_title) else getString(R.string.settings_title))
-            .setMessage(if (firstRun) "처음 실행할 때는 서버 주소만 확인하고 바로 저장하시면 됩니다. 녹음은 07:00~20:00에만 돌고, 업로드는 1시간 단위로 묶어서 올라갑니다." else null)
+            .setMessage(if (firstRun) "처음 실행할 때는 서버 주소만 확인하고 바로 저장하시면 됩니다. 녹음은 07:00~20:00에만 동작하고, 음성이 감지되면 자동으로 세그먼트를 업로드합니다." else null)
             .setView(view)
             .setNegativeButton("취소", null)
             .setPositiveButton("저장", null)
@@ -173,7 +173,7 @@ class MainActivity : AppCompatActivity() {
                 Prefs.save(this, cfg)
                 Prefs.setSetupComplete(this, true)
                 refreshConfigSummary()
-                statusText.text = "설정 저장됨 · 1시간 단위 업로드 / 07:00~20:00 녹음"
+                statusText.text = "설정 저장됨 · VAD 자동 녹음 / 07:00~20:00"
                 toast("설정을 저장했습니다.")
                 dialog.dismiss()
 
@@ -365,10 +365,10 @@ class MainActivity : AppCompatActivity() {
             appendLine("2. 첫 실행 설정에서 VPS 주소 입력")
             appendLine("3. 업로드 경로는 /api/upload 유지")
             appendLine("4. 녹음은 07:00~20:00 사이에만 동작")
-            appendLine("5. 업로드는 1시간 단위로 묶어서 전송")
-            appendLine("6. 시작 버튼 = 1시간 단위 녹음/업로드 시작")
-            appendLine("7. 중지 버튼 = 진행 중인 조각을 마무리한 뒤 종료")
-            appendLine("8. 권한(마이크/알림) 허용")
+            appendLine("5. 음성이 감지되면 자동으로 세그먼트를 업로드")
+            appendLine("6. 시작 버튼 = VAD 자동 녹음/업로드 시작")
+            appendLine("7. 중지 버튼 = 진행 중인 조각을 마무리한 뒤 완전히 종료")
+
             appendLine("9. 삼성 배터리 최적화에서 제외하면 안정적")
             appendLine("10. 업데이트는 오른쪽 위 메뉴의 '업데이트 확인'에서 확인")
         }
@@ -391,13 +391,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun beginVoiceMonitoring() {
         RecordingService.start(this)
-        statusText.text = "1시간 단위 녹음/업로드 시작 · 07:00~20:00에만 녹음"
-        toast("녹음을 시작했습니다. 1시간 단위로 업로드하고, 07:00~20:00에만 녹음합니다.")
+        statusText.text = "VAD 자동 녹음/업로드 시작 · 07:00~20:00에만 동작"
+        toast("녹음을 시작했습니다. 음성이 감지되면 자동으로 업로드하고, 07:00~20:00에만 동작합니다.")
     }
 
     private fun refreshConfigSummary() {
         val config = Prefs.load(this)
-        val usage = "시작: 서비스를 켜면 07:00~20:00 동안 1시간 단위로 녹음/업로드합니다.\n중지: 진행 중인 1시간 조각을 마무리한 뒤 완전히 종료합니다."
+        val usage = "시작: 서비스를 켜면 07:00~20:00 동안 음성 감지 기반으로 녹음/업로드합니다.\n중지: 진행 중인 음성 조각을 마무리한 뒤 완전히 종료합니다."
         recordingUsageText.text = usage
         val summary = buildString {
             appendLine("현재 설정")
@@ -405,14 +405,14 @@ class MainActivity : AppCompatActivity() {
             appendLine("- 업로드 경로: ${config.uploadPath}")
             appendLine("- 세션 이름: ${config.sessionLabel}")
             appendLine("- 녹음 시간: 07:00~20:00")
-            appendLine("- 업로드 단위: 1시간")
+            appendLine("- 녹음 방식: VAD 자동 세그먼트")
             appendLine("- 전사 키: 서버의 Gemini API 키")
             appendLine()
             appendLine(if (Prefs.isSetupComplete(this@MainActivity)) "설정 완료 · 메뉴에서 다시 수정할 수 있습니다." else "초기 설정이 필요합니다. 오른쪽 위 메뉴에서도 다시 열 수 있습니다.")
         }
         configSummaryText.text = summary
         if (statusText.text.isNullOrBlank() || statusText.text.toString() == "대기 중") {
-            statusText.text = if (Prefs.isSetupComplete(this)) "1시간 단위 업로드 대기 중" else "초기 설정 필요"
+            statusText.text = if (Prefs.isSetupComplete(this)) "VAD 대기 중" else "초기 설정 필요"
         }
     }
 

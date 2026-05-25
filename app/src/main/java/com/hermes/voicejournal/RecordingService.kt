@@ -21,7 +21,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -29,7 +31,7 @@ import java.util.Locale
 import java.util.UUID
 
 class RecordingService : Service() {
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val uploadClient = UploadClient()
 
     private var activeJob: Job? = null
@@ -61,7 +63,7 @@ class RecordingService : Service() {
         currentSessionId = buildSessionId(config?.sessionLabel ?: "workday")
         currentSegmentIndex = 0
         isRunning = true
-        startForeground(NOTIFICATION_ID, buildNotification("음성 감지 대기 중"))
+        startForeground(NOTIFICATION_ID, buildNotification("음성 대기 중 · 말하면 자동 녹음"))
 
         activeJob = serviceScope.launch {
             runLoop()
@@ -70,8 +72,8 @@ class RecordingService : Service() {
 
     private fun handleStop() {
         isRunning = false
-        runCatching { monitorRecorder?.stop() }
-        runCatching { meetingRecorder?.stop() }
+        stopMonitorRecorder()
+        stopMeetingRecorder()
         updateNotification("정지 중")
     }
 
@@ -94,56 +96,136 @@ class RecordingService : Service() {
 
     private suspend fun runLoop() {
         try {
-            while (isRunning) {
+            while (isRunning && activeJob?.isActive == true) {
                 if (!withinWorkHours()) {
                     updateNotification("업무 시간 대기 중 · 07:00~20:00")
                     delay(60_000)
                     continue
                 }
-                recordTimedChunk()
-                if (isRunning) {
-                    delay(1_000)
-                }
+
+                val detector = VoiceActivityDetector()
+                listenForSpeech(detector)
             }
         } finally {
+            stopMonitorRecorder()
             stopMeetingRecorder()
             stopForeground(true)
             stopSelf()
         }
     }
 
-    private suspend fun recordTimedChunk() {
-        val cfg = config ?: return
-        val startedAtMs = System.currentTimeMillis()
-        val chunkStopAtMs = minOf(startedAtMs + MAX_SEGMENT_DURATION_MS, workEndAt(startedAtMs))
-        if (chunkStopAtMs <= startedAtMs) return
+    private suspend fun listenForSpeech(detector: VoiceActivityDetector) {
+        if (!isRunning) return
 
-        val file = createSegmentFile()
-        val recorder = createMeetingRecorder(file) ?: return
-        meetingRecorder = recorder
+        val recorder = createMonitorRecorder() ?: run {
+            updateNotification("마이크 준비 실패 · 잠시 후 재시도")
+            delay(2_000)
+            return
+        }
+
+        monitorRecorder = recorder
+        val buffer = ShortArray(MONITOR_BUFFER_SAMPLES)
 
         try {
-            recorder.start()
-            updateNotification("회의 녹음 중 · 1시간 단위 업로드")
+            runCatching { recorder.startRecording() }
+                .getOrElse {
+                    updateNotification("음성 감지 시작 실패 · 재시도 중")
+                    return
+                }
+
+            updateNotification("음성 대기 중 · 말하면 자동 녹음")
+
+            while (isRunning && withinWorkHours()) {
+                val read = recorder.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING)
+                if (read <= 0) continue
+
+                val amplitude = averageAmplitude(buffer, read)
+                val nowMs = System.currentTimeMillis()
+                when (detector.observe(amplitude, nowMs)) {
+                    is VoiceActivityEvent.StartRecording -> {
+                        stopMonitorRecorder()
+                        recordSpeechSegment(detector)
+                        return
+                    }
+                    else -> Unit
+                }
+            }
+        } finally {
+            stopMonitorRecorder()
+        }
+    }
+
+    private suspend fun recordSpeechSegment(detector: VoiceActivityDetector) {
+        if (!isRunning) {
+            detector.reset()
+            return
+        }
+
+        val cfg = config ?: Prefs.load(this).also { config = it }
+        val startedAtMs = System.currentTimeMillis()
+        val file = createSegmentFile()
+        writeSegmentMeta(
+            file = file,
+            sessionId = currentSessionId,
+            chunkIndex = currentSegmentIndex,
+            startedAtMs = startedAtMs,
+            durationSeconds = 0L,
+        )
+
+        val recorder = createMeetingRecorder(file) ?: run {
+            cleanupSegmentArtifacts(file)
+            detector.reset()
+            updateNotification("녹음기 준비 실패 · 대기 중")
+            return
+        }
+
+        meetingRecorder = recorder
+        val chunkStopAtMs = minOf(startedAtMs + MAX_SEGMENT_DURATION_MS, workEndAt(startedAtMs))
+
+        try {
+            runCatching { recorder.start() }
+                .getOrElse {
+                    cleanupSegmentArtifacts(file)
+                    detector.reset()
+                    updateNotification("녹음 시작 실패 · 대기 중")
+                    return
+                }
+
+            updateNotification("음성 녹음 중 · 침묵 시 자동 종료")
+
             while (isRunning) {
                 val nowMs = System.currentTimeMillis()
-                if (!withinWorkHours(nowMs) || nowMs >= chunkStopAtMs) {
-                    break
+                if (!withinWorkHours(nowMs) || nowMs >= chunkStopAtMs) break
+
+                val amplitude = runCatching { recorder.maxAmplitude }.getOrDefault(0)
+                when (detector.observe(amplitude, nowMs)) {
+                    is VoiceActivityEvent.StopRecording -> break
+                    else -> Unit
                 }
-                delay(500)
+
+                delay(RECORDER_POLL_INTERVAL_MS)
             }
         } finally {
             stopMeetingRecorder()
         }
 
-        if (!file.exists()) return
         val durationSeconds = ((System.currentTimeMillis() - startedAtMs) / 1000L).coerceAtLeast(1L)
-        if (durationSeconds < 3) {
-            file.delete()
+        writeSegmentMeta(
+            file = file,
+            sessionId = currentSessionId,
+            chunkIndex = currentSegmentIndex,
+            startedAtMs = startedAtMs,
+            durationSeconds = durationSeconds,
+        )
+
+        if (!file.exists() || file.length() < MIN_VALID_FILE_BYTES) {
+            cleanupSegmentArtifacts(file)
+            detector.reset()
+            updateNotification("짧은 녹음은 건너뜀 · 대기 중")
             return
         }
 
-        updateNotification("전송 중 · 1시간 녹음 업로드")
+        updateNotification("전송 중 · 음성 세그먼트 업로드")
         val uploadResult = uploadClient.uploadChunk(
             serverUrl = cfg.serverUrl,
             uploadPath = cfg.uploadPath,
@@ -167,28 +249,30 @@ class RecordingService : Service() {
                     uploadedAtIso = isoNow(System.currentTimeMillis()),
                 )
             )
-            file.delete()
+            cleanupSegmentArtifacts(file)
             currentSegmentIndex += 1
-            if (isRunning) {
-                updateNotification("다음 1시간 녹음 대기 중")
-            }
+
             if (result != null && (result.savedPath != null || result.transcriptPath != null)) {
-                updateNotification("전송 완료 · ${result.savedPath ?: "저장 경로 확인"}")
+                updateNotification("전송 완료 · ${result.savedPath ?: "서버 저장 완료"}")
+            } else {
+                updateNotification("전송 완료 · 대기 중")
             }
         } else {
             updateNotification("업로드 실패 · 파일 보관 중")
         }
+
+        detector.reset()
     }
 
     private fun createMonitorRecorder(): AudioRecord? {
-        val sampleRate = 16_000
+        val sampleRate = MONITOR_SAMPLE_RATE
         val minBufferSize = AudioRecord.getMinBufferSize(
             sampleRate,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
         )
         if (minBufferSize <= 0) return null
-        val bufferSize = minBufferSize.coerceAtLeast(4_096)
+        val bufferSize = minBufferSize.coerceAtLeast(MONITOR_BUFFER_SAMPLES * 2)
         return AudioRecord.Builder()
             .setAudioSource(MediaRecorder.AudioSource.MIC)
             .setAudioFormat(
@@ -252,6 +336,27 @@ class RecordingService : Service() {
         val baseDir = File(cacheDir, "voice-journal/$currentSessionId").apply { mkdirs() }
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         return File(baseDir, "meeting_${currentSegmentIndex.toString().padStart(4, '0')}_$stamp.m4a")
+    }
+
+    private fun writeSegmentMeta(
+        file: File,
+        sessionId: String,
+        chunkIndex: Int,
+        startedAtMs: Long,
+        durationSeconds: Long,
+    ) {
+        val meta = JSONObject().apply {
+            put("session_id", sessionId)
+            put("chunk_index", chunkIndex)
+            put("duration_seconds", durationSeconds)
+            put("started_at", isoNow(startedAtMs))
+        }
+        File(file.parentFile, "${file.nameWithoutExtension}.json").writeText(meta.toString())
+    }
+
+    private fun cleanupSegmentArtifacts(file: File) {
+        runCatching { file.delete() }
+        runCatching { File(file.parentFile, "${file.nameWithoutExtension}.json").delete() }
     }
 
     private fun buildNotification(content: String): Notification {
@@ -333,6 +438,10 @@ class RecordingService : Service() {
         private const val WORK_START_HOUR = 7
         private const val WORK_END_HOUR = 20
         private const val MAX_SEGMENT_DURATION_MS = 60 * 60 * 1000L
+        private const val MIN_VALID_FILE_BYTES = 2_048L
+        private const val MONITOR_SAMPLE_RATE = 16_000
+        private const val MONITOR_BUFFER_SAMPLES = 1_024
+        private const val RECORDER_POLL_INTERVAL_MS = 120L
         const val ACTION_START = "com.hermes.voicejournal.action.START"
         const val ACTION_STOP = "com.hermes.voicejournal.action.STOP"
         const val CHANNEL_ID = "voice_journal_recording"
