@@ -141,7 +141,7 @@ class MainActivity : AppCompatActivity() {
         val sessionLabelInput = view.findViewById<TextInputEditText>(R.id.sessionLabelInput)
 
         val current = Prefs.load(this)
-        serverUrlInput.setText(current.serverUrl.ifBlank { "http://187.77.115.121:8799" })
+        serverUrlInput.setText(current.serverUrl.ifBlank { "http://<VPS_IP>:8799" })
         uploadPathInput.setText(current.uploadPath.ifBlank { "/api/upload" })
         sessionLabelInput.setText(current.sessionLabel.ifBlank { "workday" })
 

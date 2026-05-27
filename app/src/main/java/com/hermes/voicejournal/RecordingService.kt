@@ -258,7 +258,12 @@ class RecordingService : Service() {
                 updateNotification("전송 완료 · 대기 중")
             }
         } else {
-            updateNotification("업로드 실패 · 파일 보관 중")
+            val reason = uploadResult.exceptionOrNull()?.message?.take(80)
+            if (reason.isNullOrBlank()) {
+                updateNotification("업로드 실패 · 파일 보관 중")
+            } else {
+                updateNotification("업로드 실패 · ${reason}")
+            }
         }
 
         detector.reset()

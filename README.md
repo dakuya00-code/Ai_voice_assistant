@@ -34,10 +34,20 @@ Android 우선 백그라운드 녹음 앱 + 서버 분석 파이프라인 프로
 - `https://your-domain.example`
 - 업로드 경로: `/api/upload`
 
-## 빠른 시작 (서버)
+## 빠른 시작 (로컬 VPS HTTP 업로드 서버)
 ```bash
+cd server
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python scripts/voice_journal.py --help
+uvicorn upload_server:app --host 0.0.0.0 --port 8799
 ```
+
+테스트:
+```bash
+curl http://127.0.0.1:8799/health
+```
+
+앱 설정:
+- 서버 URL: `http://<VPS_IP>:8799`
+- 업로드 경로: `/api/upload`
