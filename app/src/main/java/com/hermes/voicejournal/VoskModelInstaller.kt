@@ -7,22 +7,30 @@ import java.util.zip.ZipInputStream
 
 object VoskModelInstaller {
     private const val ASSET_MODEL_DIR = "vosk-model"
-    private const val MODEL_ZIP_URL = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
+    private const val MODEL_ID = "vosk-model-small-ko-0.22"
+    private const val MODEL_ZIP_URL = "https://alphacephei.com/vosk/models/vosk-model-small-ko-0.22.zip"
 
     fun ensureInstalled(context: Context): Result<String> {
         return runCatching {
             val targetDir = File(context.filesDir, ASSET_MODEL_DIR)
+            val marker = File(targetDir, ".model-id")
+
             if (targetDir.exists() && targetDir.isDirectory && targetDir.list()?.isNotEmpty() == true) {
-                return@runCatching "already_installed"
+                if (marker.exists() && marker.readText().trim() == MODEL_ID) {
+                    return@runCatching "already_installed"
+                }
+                targetDir.deleteRecursively()
             }
 
             val rootEntries = context.assets.list(ASSET_MODEL_DIR) ?: emptyArray()
             if (rootEntries.isNotEmpty()) {
                 copyAssetDir(context, ASSET_MODEL_DIR, targetDir)
+                marker.writeText(MODEL_ID)
                 return@runCatching "installed_from_assets"
             }
 
             downloadAndExtractModel(targetDir)
+            marker.writeText(MODEL_ID)
             "installed_from_download"
         }
     }

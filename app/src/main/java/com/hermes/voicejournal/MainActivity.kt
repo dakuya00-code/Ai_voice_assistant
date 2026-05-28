@@ -251,8 +251,9 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val config = Prefs.load(this@MainActivity)
             val uploaded = TextUploadQueue.uploadPending(this@MainActivity, config, uploadClient)
+            val remainingWav = listLocalRecordingFiles().count { it.extension.equals("wav", ignoreCase = true) }
             refreshConfigSummary()
-            statusText.text = "수동 업로드 완료 · 텍스트 ${uploaded}개"
+            statusText.text = "수동 업로드 완료 · 텍스트 ${uploaded}개 / 잔여 WAV ${remainingWav}개"
             if (uploaded > 0) {
                 toast("수동 텍스트 업로드를 완료했습니다.")
             } else {
