@@ -231,13 +231,30 @@ class RecordingService : Service() {
         }.trim()
 
         if (analysisText.isNotBlank()) {
-            runCatching {
+            val textUploadResult = runCatching {
                 uploadClient.uploadAnalysisText(
                     serverUrl = cfg.serverUrl,
                     sessionId = currentSessionId,
                     sourceFile = file.name,
                     analyzedText = analysisText,
                 )
+            }
+            if (textUploadResult.isSuccess) {
+                UploadHistoryStore.append(
+                    this,
+                    UploadedFileEntry(
+                        sessionId = currentSessionId,
+                        fileName = "${file.nameWithoutExtension}.txt",
+                        chunkIndex = currentSegmentIndex,
+                        durationSeconds = durationSeconds,
+                        startedAtIso = isoNow(startedAtMs),
+                        uploadedAtIso = isoNow(System.currentTimeMillis()),
+                        payloadType = "text",
+                    )
+                )
+            } else {
+                val reason = textUploadResult.exceptionOrNull()?.message?.take(60)
+                updateNotification("텍스트 업로드 실패 · ${reason ?: "원인 미상"}")
             }
         }
 
