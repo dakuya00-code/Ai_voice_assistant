@@ -13,7 +13,7 @@ object VoskTranscriber {
 
     fun hasModel(context: Context): Boolean {
         val modelDir = File(context.filesDir, "vosk-model")
-        return modelDir.exists()
+        return modelDir.exists() && File(modelDir, "am").exists() && File(modelDir, "conf").exists()
     }
 
     fun transcribeFile(context: Context, wavFile: File): String {

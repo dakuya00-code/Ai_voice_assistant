@@ -95,6 +95,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         ensurePermissions()
+        ensureVoskModelReady()
         refreshConfigSummary()
 
         if (!Prefs.isSetupComplete(this)) {
@@ -490,6 +491,21 @@ class MainActivity : AppCompatActivity() {
         }
         if (missing.isNotEmpty()) {
             permissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+
+    private fun ensureVoskModelReady() {
+        lifecycleScope.launch {
+            if (VoskTranscriber.hasModel(this@MainActivity)) return@launch
+            val result = VoskModelInstaller.ensureInstalled(this@MainActivity)
+            result.onSuccess { installed ->
+                if (installed) {
+                    toast("Vosk 모델 설치 완료")
+                }
+            }.onFailure {
+                statusText.text = "모바일 분석 준비 필요 · assets/vosk-model 미포함"
+            }
+            refreshConfigSummary()
         }
     }
 
