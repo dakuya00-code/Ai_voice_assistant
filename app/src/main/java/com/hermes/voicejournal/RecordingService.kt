@@ -442,7 +442,7 @@ class RecordingService : Service() {
     companion object {
         private const val WORK_START_HOUR = 7
         private const val WORK_END_HOUR = 20
-        private const val MAX_SEGMENT_DURATION_MS = 60 * 60 * 1000L
+        private const val MAX_SEGMENT_DURATION_MS = 5 * 60 * 1000L
         private const val MIN_VALID_FILE_BYTES = 2_048L
         private const val MONITOR_SAMPLE_RATE = 16_000
         private const val MONITOR_BUFFER_SAMPLES = 1_024

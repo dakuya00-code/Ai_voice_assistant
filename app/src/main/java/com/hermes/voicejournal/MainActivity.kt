@@ -235,6 +235,7 @@ class MainActivity : AppCompatActivity() {
             var successCount = 0
             var failureCount = 0
             val failedNames = mutableListOf<String>()
+            val failureReasons = mutableListOf<String>()
 
             for (file in pendingFiles) {
                 val meta = readPendingUploadMeta(file)
@@ -270,6 +271,8 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     failureCount += 1
                     failedNames += file.name
+                    val reason = result.exceptionOrNull()?.message?.take(80) ?: "unknown"
+                    failureReasons += "${file.name}: ${reason}"
                 }
             }
 
@@ -286,6 +289,9 @@ class MainActivity : AppCompatActivity() {
                     "수동 업로드 실패 파일: ${failedNames.joinToString(", ")}"
                 }
             )
+            if (failureReasons.isNotEmpty()) {
+                statusText.text = statusText.text.toString() + "\n" + failureReasons.joinToString(" | ")
+            }
         }
     }
 

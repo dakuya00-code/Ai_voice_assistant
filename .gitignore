@@ -23,3 +23,6 @@ data/processed/*
 !data/processed/.gitkeep
 logs/*
 !logs/.gitkeep
+
+# local upload-server runtime data
+server/server_data/

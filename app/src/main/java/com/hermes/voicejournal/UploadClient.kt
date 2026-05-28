@@ -21,8 +21,8 @@ data class UploadResult(
 class UploadClient {
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(180, TimeUnit.SECONDS)
+        .writeTimeout(180, TimeUnit.SECONDS)
         .build()
 
     suspend fun uploadChunk(
