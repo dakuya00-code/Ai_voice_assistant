@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 app = FastAPI(title="voice-journal-upload")
 
-STORAGE_ROOT = Path(os.getenv("VOICE_JOURNAL_STORAGE_ROOT", "./server_data")).resolve()
+STORAGE_ROOT = Path(os.getenv("VOICE_JOURNAL_STORAGE_ROOT", "/workspace/server_data")).resolve()
 RECORDINGS_DIR = STORAGE_ROOT / "recordings"
 METADATA_DIR = STORAGE_ROOT / "metadata"
 
