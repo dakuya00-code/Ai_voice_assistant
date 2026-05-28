@@ -32,7 +32,6 @@ import java.util.UUID
 
 class RecordingService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val uploadClient = UploadClient()
 
     private var activeJob: Job? = null
     private var isRunning = false
@@ -158,7 +157,7 @@ class RecordingService : Service() {
             return
         }
 
-        val cfg = config ?: Prefs.load(this).also { config = it }
+
         val startedAtMs = System.currentTimeMillis()
         val file = createSegmentFile()
         writeSegmentMeta(file, currentSessionId, currentSegmentIndex, startedAtMs, 0L)
@@ -230,67 +229,19 @@ class RecordingService : Service() {
             ""
         }.trim()
 
-        if (analysisText.isNotBlank()) {
-            val textUploadResult = runCatching {
-                uploadClient.uploadAnalysisText(
-                    serverUrl = cfg.serverUrl,
-                    sessionId = currentSessionId,
-                    sourceFile = file.name,
-                    analyzedText = analysisText,
-                )
-            }
-            if (textUploadResult.isSuccess) {
-                UploadHistoryStore.append(
-                    this,
-                    UploadedFileEntry(
-                        sessionId = currentSessionId,
-                        fileName = "${file.nameWithoutExtension}.txt",
-                        chunkIndex = currentSegmentIndex,
-                        durationSeconds = durationSeconds,
-                        startedAtIso = isoNow(startedAtMs),
-                        uploadedAtIso = isoNow(System.currentTimeMillis()),
-                        payloadType = "text",
-                    )
-                )
-            } else {
-                val reason = textUploadResult.exceptionOrNull()?.message?.take(60)
-                updateNotification("텍스트 업로드 실패 · ${reason ?: "원인 미상"}")
-            }
-        }
-
-        updateNotification("전송 중 · 음성 세그먼트 업로드")
-        val uploadResult = uploadClient.uploadChunk(
-            serverUrl = cfg.serverUrl,
-            uploadPath = cfg.uploadPath,
-            sessionId = currentSessionId,
-            chunkIndex = currentSegmentIndex,
-            durationSeconds = durationSeconds,
-            startedAtIso = isoNow(startedAtMs),
-            file = file,
-        )
-
-        if (uploadResult.isSuccess) {
-            val result = uploadResult.getOrNull()
-            UploadHistoryStore.append(
-                this,
-                UploadedFileEntry(
-                    sessionId = currentSessionId,
-                    fileName = file.name,
-                    chunkIndex = currentSegmentIndex,
-                    durationSeconds = durationSeconds,
-                    startedAtIso = isoNow(startedAtMs),
-                    uploadedAtIso = isoNow(System.currentTimeMillis()),
-                    payloadType = "audio",
-                )
-            )
+        if (analysisText.isBlank()) {
             cleanupSegmentArtifacts(file)
-            currentSegmentIndex += 1
-            updateNotification("전송 완료 · ${result?.savedPath ?: "서버 저장 완료"}")
-        } else {
-            val reason = uploadResult.exceptionOrNull()?.message?.take(80)
-            updateNotification(if (reason.isNullOrBlank()) "업로드 실패 · 파일 보관 중" else "업로드 실패 · $reason")
+            detector.reset()
+            updateNotification("전사 결과 없음 · 오디오 삭제")
+            return
         }
 
+        val textFile = File(file.parentFile, "${file.nameWithoutExtension}.txt")
+        runCatching { textFile.writeText(analysisText) }
+
+        cleanupSegmentArtifacts(file)
+        currentSegmentIndex += 1
+        updateNotification("전사 완료 · 텍스트 대기열에 저장")
         detector.reset()
     }
 

@@ -29,7 +29,6 @@ import com.google.android.material.textfield.TextInputLayout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -98,6 +97,7 @@ class MainActivity : AppCompatActivity() {
 
         ensurePermissions()
         ensureVoskModelReady()
+        TextUploadWorker.scheduleHourly(this)
         refreshConfigSummary()
 
         if (!Prefs.isSetupComplete(this)) {
@@ -241,117 +241,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startManualUpload() {
-        val pendingFiles = listLocalRecordingFiles().sortedBy { it.lastModified() }
-        if (pendingFiles.isEmpty()) {
-            toast("수동 업로드할 음성파일이 없습니다.")
+        val pendingTextFiles = TextUploadQueue.listPendingTextFiles(this)
+        if (pendingTextFiles.isEmpty()) {
+            toast("수동 업로드할 텍스트 파일이 없습니다.")
             return
         }
 
-        statusText.text = "수동 업로드 준비 중 · ${pendingFiles.size}개"
+        statusText.text = "수동 업로드 준비 중 · 텍스트 ${pendingTextFiles.size}개"
         lifecycleScope.launch {
             val config = Prefs.load(this@MainActivity)
-            var successCount = 0
-            var failureCount = 0
-            val failedNames = mutableListOf<String>()
-            val failureReasons = mutableListOf<String>()
-
-            for (file in pendingFiles) {
-                val meta = readPendingUploadMeta(file)
-                val result = uploadClient.uploadChunk(
-                    serverUrl = config.serverUrl,
-                    uploadPath = config.uploadPath,
-                    sessionId = meta.sessionId,
-                    chunkIndex = meta.chunkIndex,
-                    durationSeconds = meta.durationSeconds,
-                    startedAtIso = meta.startedAtIso,
-                    file = file,
-                )
-
-                if (result.isSuccess) {
-                    val uploadInfo = result.getOrNull()
-                    UploadHistoryStore.append(
-                        this@MainActivity,
-                        UploadedFileEntry(
-                            sessionId = meta.sessionId,
-                            fileName = file.name,
-                            chunkIndex = meta.chunkIndex,
-                            durationSeconds = meta.durationSeconds,
-                            startedAtIso = meta.startedAtIso,
-                            uploadedAtIso = java.time.Instant.now().toString(),
-                            payloadType = "audio",
-                        )
-                    )
-                    runCatching { file.delete() }
-                    runCatching { File(file.parentFile, "${file.nameWithoutExtension}.json").delete() }
-                    successCount += 1
-                    uploadInfo?.let {
-                        logUploadDestination(file.name, it.savedPath, it.transcriptPath, it.audioDeleted, it.audioDeleteError)
-                    }
-                } else {
-                    failureCount += 1
-                    failedNames += file.name
-                    val reason = result.exceptionOrNull()?.message?.take(80) ?: "unknown"
-                    failureReasons += "${file.name}: ${reason}"
-                }
-            }
-
-            val textUploadCount = uploadPendingTextAnalyses(config)
-
+            val uploaded = TextUploadQueue.uploadPending(this@MainActivity, config, uploadClient)
             refreshConfigSummary()
-            statusText.text = if (failureCount == 0) {
-                "수동 업로드 완료 · 음성 ${successCount}개 / 텍스트 ${textUploadCount}개"
-            } else {
-                "수동 업로드 일부 실패 · 음성 성공 ${successCount}개 / 실패 ${failureCount}개 / 텍스트 ${textUploadCount}개"
-            }
-            toast(
-                if (failureCount == 0) {
-                    "수동 업로드를 완료했습니다."
-                } else {
-                    "수동 업로드 실패 파일: ${failedNames.joinToString(", ")}"
-                }
-            )
-            if (failureReasons.isNotEmpty()) {
-                statusText.text = statusText.text.toString() + "\n" + failureReasons.joinToString(" | ")
-            }
+            statusText.text = "수동 업로드 완료 · 텍스트 ${uploaded}개"
+            toast("수동 텍스트 업로드를 완료했습니다.")
         }
-    }
-
-    private data class PendingUploadMeta(
-        val sessionId: String,
-        val chunkIndex: Int,
-        val durationSeconds: Long,
-        val startedAtIso: String,
-    )
-
-    private fun readPendingUploadMeta(file: File): PendingUploadMeta {
-        val metaFile = File(file.parentFile, "${file.nameWithoutExtension}.json")
-        if (metaFile.exists()) {
-            runCatching {
-                val json = JSONObject(metaFile.readText())
-                return PendingUploadMeta(
-                    sessionId = json.optString("session_id").ifBlank { file.parentFile?.name ?: "manual" },
-                    chunkIndex = json.optInt("chunk_index", parseChunkIndex(file.name)),
-                    durationSeconds = json.optLong("duration_seconds", 1L).coerceAtLeast(1L),
-                    startedAtIso = json.optString("started_at").ifBlank { metaTimestamp(file) },
-                )
-            }
-        }
-
-        return PendingUploadMeta(
-            sessionId = file.parentFile?.name ?: "manual",
-            chunkIndex = parseChunkIndex(file.name),
-            durationSeconds = 1L,
-            startedAtIso = metaTimestamp(file),
-        )
-    }
-
-    private fun parseChunkIndex(name: String): Int {
-        val match = Regex("meeting_(\\d+)_").find(name)
-        return match?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
-    }
-
-    private fun metaTimestamp(file: File): String {
-        return java.time.Instant.ofEpochMilli(file.lastModified()).toString()
     }
 
     private fun showUpdateDialog() {
@@ -423,40 +326,6 @@ class MainActivity : AppCompatActivity() {
             .filter { it.isFile && it.extension.equals("txt", ignoreCase = true) }
             .sortedByDescending { it.lastModified() }
             .toList()
-    }
-
-    private suspend fun uploadPendingTextAnalyses(config: RecordingConfig): Int {
-        val textFiles = listLocalAnalysisTextFiles().sortedBy { it.lastModified() }
-        var uploaded = 0
-        for (file in textFiles) {
-            val sessionId = file.parentFile?.name ?: config.sessionLabel
-            val text = runCatching { file.readText() }.getOrDefault("").trim()
-            if (text.isBlank()) continue
-
-            val result = uploadClient.uploadAnalysisText(
-                serverUrl = config.serverUrl,
-                sessionId = sessionId,
-                sourceFile = file.name,
-                analyzedText = text,
-            )
-            if (result.isSuccess) {
-                UploadHistoryStore.append(
-                    this,
-                    UploadedFileEntry(
-                        sessionId = sessionId,
-                        fileName = file.name,
-                        chunkIndex = 0,
-                        durationSeconds = 0,
-                        startedAtIso = java.time.Instant.ofEpochMilli(file.lastModified()).toString(),
-                        uploadedAtIso = java.time.Instant.now().toString(),
-                        payloadType = "text",
-                    )
-                )
-                runCatching { file.delete() }
-                uploaded += 1
-            }
-        }
-        return uploaded
     }
 
     private fun beginVoiceMonitoring() {
