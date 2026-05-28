@@ -39,7 +39,6 @@ class RecordingService : Service() {
     private var currentSessionId: String = ""
     private var currentSegmentIndex = 0
     private var monitorRecorder: AudioRecord? = null
-    private var meetingRecorder: MediaRecorder? = null
     private var config: RecordingConfig? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -164,27 +163,23 @@ class RecordingService : Service() {
         val cfg = config ?: Prefs.load(this).also { config = it }
         val startedAtMs = System.currentTimeMillis()
         val file = createSegmentFile()
-        writeSegmentMeta(
-            file = file,
-            sessionId = currentSessionId,
-            chunkIndex = currentSegmentIndex,
-            startedAtMs = startedAtMs,
-            durationSeconds = 0L,
-        )
+        writeSegmentMeta(file, currentSessionId, currentSegmentIndex, startedAtMs, 0L)
 
-        val recorder = createMeetingRecorder(file) ?: run {
+        val recorder = createSegmentAudioRecorder() ?: run {
             cleanupSegmentArtifacts(file)
             detector.reset()
             updateNotification("녹음기 준비 실패 · 대기 중")
             return
         }
 
-        meetingRecorder = recorder
         val chunkStopAtMs = minOf(startedAtMs + MAX_SEGMENT_DURATION_MS, workEndAt(startedAtMs))
+        val pcmBuffer = ShortArray(SEGMENT_BUFFER_SAMPLES)
+        val pcmOut = java.io.ByteArrayOutputStream()
 
         try {
-            runCatching { recorder.start() }
+            runCatching { recorder.startRecording() }
                 .getOrElse {
+                    runCatching { recorder.release() }
                     cleanupSegmentArtifacts(file)
                     detector.reset()
                     updateNotification("녹음 시작 실패 · 대기 중")
@@ -197,32 +192,52 @@ class RecordingService : Service() {
                 val nowMs = System.currentTimeMillis()
                 if (!withinWorkHours(nowMs) || nowMs >= chunkStopAtMs) break
 
-                val amplitude = runCatching { recorder.maxAmplitude }.getOrDefault(0)
+                val read = recorder.read(pcmBuffer, 0, pcmBuffer.size, AudioRecord.READ_BLOCKING)
+                if (read <= 0) continue
+
+                val amplitude = averageAmplitude(pcmBuffer, read)
                 when (detector.observe(amplitude, nowMs)) {
                     is VoiceActivityEvent.StopRecording -> break
                     else -> Unit
                 }
 
-                delay(RECORDER_POLL_INTERVAL_MS)
+                for (i in 0 until read) {
+                    val s = pcmBuffer[i].toInt()
+                    pcmOut.write(s and 0xFF)
+                    pcmOut.write((s shr 8) and 0xFF)
+                }
             }
         } finally {
-            stopMeetingRecorder()
+            runCatching { recorder.stop() }
+            runCatching { recorder.release() }
         }
 
+        val pcmBytes = pcmOut.toByteArray()
+        writeWavFile(file, pcmBytes, SEGMENT_SAMPLE_RATE, 1, 16)
+
         val durationSeconds = ((System.currentTimeMillis() - startedAtMs) / 1000L).coerceAtLeast(1L)
-        writeSegmentMeta(
-            file = file,
-            sessionId = currentSessionId,
-            chunkIndex = currentSegmentIndex,
-            startedAtMs = startedAtMs,
-            durationSeconds = durationSeconds,
-        )
+        writeSegmentMeta(file, currentSessionId, currentSegmentIndex, startedAtMs, durationSeconds)
 
         if (!file.exists() || file.length() < MIN_VALID_FILE_BYTES) {
             cleanupSegmentArtifacts(file)
             detector.reset()
             updateNotification("짧은 녹음은 건너뜀 · 대기 중")
             return
+        }
+
+        val analysisText = runCatching {
+            VoskTranscriber.transcribeFile(this, file)
+        }.getOrNull()?.trim().orEmpty()
+
+        if (analysisText.isNotBlank()) {
+            runCatching {
+                uploadClient.uploadAnalysisText(
+                    serverUrl = cfg.serverUrl,
+                    sessionId = currentSessionId,
+                    sourceFile = file.name,
+                    analyzedText = analysisText,
+                )
+            }
         }
 
         updateNotification("전송 중 · 음성 세그먼트 업로드")
@@ -247,23 +262,15 @@ class RecordingService : Service() {
                     durationSeconds = durationSeconds,
                     startedAtIso = isoNow(startedAtMs),
                     uploadedAtIso = isoNow(System.currentTimeMillis()),
+                    payloadType = "audio",
                 )
             )
             cleanupSegmentArtifacts(file)
             currentSegmentIndex += 1
-
-            if (result != null && (result.savedPath != null || result.transcriptPath != null)) {
-                updateNotification("전송 완료 · ${result.savedPath ?: "서버 저장 완료"}")
-            } else {
-                updateNotification("전송 완료 · 대기 중")
-            }
+            updateNotification("전송 완료 · ${result?.savedPath ?: "서버 저장 완료"}")
         } else {
             val reason = uploadResult.exceptionOrNull()?.message?.take(80)
-            if (reason.isNullOrBlank()) {
-                updateNotification("업로드 실패 · 파일 보관 중")
-            } else {
-                updateNotification("업로드 실패 · ${reason}")
-            }
+            updateNotification(if (reason.isNullOrBlank()) "업로드 실패 · 파일 보관 중" else "업로드 실패 · $reason")
         }
 
         detector.reset()
@@ -291,25 +298,59 @@ class RecordingService : Service() {
             .build()
     }
 
-    private fun createMeetingRecorder(file: File): MediaRecorder? {
-        val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            MediaRecorder(this)
-        } else {
-            @Suppress("DEPRECATION")
-            MediaRecorder()
-        }
-        return try {
-            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
-            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            recorder.setAudioEncodingBitRate(128_000)
-            recorder.setAudioSamplingRate(44_100)
-            recorder.setOutputFile(file.absolutePath)
-            recorder.prepare()
-            recorder
-        } catch (_: Exception) {
-            runCatching { recorder.release() }
-            null
+    private fun createSegmentAudioRecorder(): AudioRecord? {
+        val minBufferSize = AudioRecord.getMinBufferSize(
+            SEGMENT_SAMPLE_RATE,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+        )
+        if (minBufferSize <= 0) return null
+        val bufferSize = minBufferSize.coerceAtLeast(SEGMENT_BUFFER_SAMPLES * 2)
+        return AudioRecord.Builder()
+            .setAudioSource(MediaRecorder.AudioSource.MIC)
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setSampleRate(SEGMENT_SAMPLE_RATE)
+                    .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .build()
+            )
+            .setBufferSizeInBytes(bufferSize)
+            .build()
+    }
+
+    private fun writeWavFile(file: File, pcmBytes: ByteArray, sampleRate: Int, channels: Int, bitsPerSample: Int) {
+        val byteRate = sampleRate * channels * bitsPerSample / 8
+        val dataSize = pcmBytes.size
+        val chunkSize = 36 + dataSize
+
+        file.outputStream().use { out ->
+            fun w(s: String) = out.write(s.toByteArray(Charsets.US_ASCII))
+            fun i(v: Int) {
+                out.write(v and 0xFF)
+                out.write((v shr 8) and 0xFF)
+                out.write((v shr 16) and 0xFF)
+                out.write((v shr 24) and 0xFF)
+            }
+            fun s(v: Int) {
+                out.write(v and 0xFF)
+                out.write((v shr 8) and 0xFF)
+            }
+
+            w("RIFF")
+            i(chunkSize)
+            w("WAVE")
+            w("fmt ")
+            i(16)
+            s(1)
+            s(channels)
+            i(sampleRate)
+            i(byteRate)
+            s(channels * bitsPerSample / 8)
+            s(bitsPerSample)
+            w("data")
+            i(dataSize)
+            out.write(pcmBytes)
         }
     }
 
@@ -340,7 +381,7 @@ class RecordingService : Service() {
     private fun createSegmentFile(): File {
         val baseDir = File(cacheDir, "voice-journal/$currentSessionId").apply { mkdirs() }
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        return File(baseDir, "meeting_${currentSegmentIndex.toString().padStart(4, '0')}_$stamp.m4a")
+        return File(baseDir, "meeting_${currentSegmentIndex.toString().padStart(4, '0')}_$stamp.wav")
     }
 
     private fun writeSegmentMeta(
@@ -446,7 +487,8 @@ class RecordingService : Service() {
         private const val MIN_VALID_FILE_BYTES = 2_048L
         private const val MONITOR_SAMPLE_RATE = 16_000
         private const val MONITOR_BUFFER_SAMPLES = 1_024
-        private const val RECORDER_POLL_INTERVAL_MS = 120L
+        private const val SEGMENT_SAMPLE_RATE = 16_000
+        private const val SEGMENT_BUFFER_SAMPLES = 2_048
         const val ACTION_START = "com.hermes.voicejournal.action.START"
         const val ACTION_STOP = "com.hermes.voicejournal.action.STOP"
         const val CHANNEL_ID = "voice_journal_recording"

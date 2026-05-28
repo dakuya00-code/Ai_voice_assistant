@@ -403,7 +403,7 @@ class MainActivity : AppCompatActivity() {
         val root = java.io.File(cacheDir, "voice-journal")
         if (!root.exists()) return emptyList()
         return root.walkTopDown()
-            .filter { it.isFile && it.extension.equals("m4a", ignoreCase = true) }
+            .filter { it.isFile && (it.extension.equals("m4a", ignoreCase = true) || it.extension.equals("wav", ignoreCase = true)) }
             .sortedByDescending { it.lastModified() }
             .toList()
     }
