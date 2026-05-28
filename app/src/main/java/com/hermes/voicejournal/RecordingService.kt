@@ -72,7 +72,6 @@ class RecordingService : Service() {
     private fun handleStop() {
         isRunning = false
         stopMonitorRecorder()
-        stopMeetingRecorder()
         updateNotification("정지 중")
     }
 
@@ -107,7 +106,6 @@ class RecordingService : Service() {
             }
         } finally {
             stopMonitorRecorder()
-            stopMeetingRecorder()
             stopForeground(true)
             stopSelf()
         }
@@ -373,14 +371,6 @@ class RecordingService : Service() {
         monitorRecorder = null
     }
 
-    private fun stopMeetingRecorder() {
-        val recorder = meetingRecorder ?: return
-        runCatching { recorder.stop() }
-        runCatching { recorder.reset() }
-        runCatching { recorder.release() }
-        meetingRecorder = null
-    }
-
     private fun createSegmentFile(): File {
         val baseDir = File(cacheDir, "voice-journal/$currentSessionId").apply { mkdirs() }
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -478,7 +468,6 @@ class RecordingService : Service() {
 
     override fun onDestroy() {
         stopMonitorRecorder()
-        stopMeetingRecorder()
         serviceScope.cancel()
         super.onDestroy()
     }
