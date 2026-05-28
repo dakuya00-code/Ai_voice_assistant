@@ -26,7 +26,9 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 
@@ -502,16 +504,20 @@ class MainActivity : AppCompatActivity() {
     private fun ensureVoskModelReady() {
         lifecycleScope.launch {
             if (VoskTranscriber.hasModel(this@MainActivity)) return@launch
-            val result = VoskModelInstaller.ensureInstalled(this@MainActivity)
-            result.onSuccess { installed ->
-                if (installed) {
-                    toast("Vosk 모델 설치 완료")
+            statusText.text = "모바일 분석 준비 중 · Vosk 모델 설치"
+            val result = withContext(Dispatchers.IO) {
+                VoskModelInstaller.ensureInstalled(this@MainActivity)
+            }
+            result.onSuccess { installedFrom ->
+                when (installedFrom) {
+                    "installed_from_assets" -> toast("Vosk 모델 설치 완료(앱 내장)")
+                    "installed_from_download" -> toast("Vosk 모델 다운로드 설치 완료")
                 }
             }.onFailure {
-                statusText.text = "모바일 분석 준비 필요 · assets/vosk-model 미포함"
+                statusText.text = "모바일 분석 준비 실패 · Vosk 모델 설치 오류"
                 MaterialAlertDialogBuilder(this@MainActivity)
                     .setTitle("Vosk 모델 필요")
-                    .setMessage("휴대폰 분석을 사용하려면 APK에 assets/vosk-model 폴더가 포함되어야 합니다.\n\n현재는 모델이 없어 음성 파일만 업로드됩니다.")
+                    .setMessage("Vosk 모델 설치에 실패했습니다. 네트워크 연결 상태를 확인하고 앱을 다시 실행해 주세요.")
                     .setPositiveButton("확인", null)
                     .show()
             }

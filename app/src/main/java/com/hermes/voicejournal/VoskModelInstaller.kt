@@ -2,24 +2,28 @@ package com.hermes.voicejournal
 
 import android.content.Context
 import java.io.File
+import java.net.URL
+import java.util.zip.ZipInputStream
 
 object VoskModelInstaller {
     private const val ASSET_MODEL_DIR = "vosk-model"
+    private const val MODEL_ZIP_URL = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
 
-    fun ensureInstalled(context: Context): Result<Boolean> {
+    fun ensureInstalled(context: Context): Result<String> {
         return runCatching {
             val targetDir = File(context.filesDir, ASSET_MODEL_DIR)
             if (targetDir.exists() && targetDir.isDirectory && targetDir.list()?.isNotEmpty() == true) {
-                return@runCatching false
+                return@runCatching "already_installed"
             }
 
             val rootEntries = context.assets.list(ASSET_MODEL_DIR) ?: emptyArray()
-            if (rootEntries.isEmpty()) {
-                throw IllegalStateException("assets/vosk-model not found")
+            if (rootEntries.isNotEmpty()) {
+                copyAssetDir(context, ASSET_MODEL_DIR, targetDir)
+                return@runCatching "installed_from_assets"
             }
 
-            copyAssetDir(context, ASSET_MODEL_DIR, targetDir)
-            true
+            downloadAndExtractModel(targetDir)
+            "installed_from_download"
         }
     }
 
@@ -39,5 +43,33 @@ object VoskModelInstaller {
                 }
             }
         }
+    }
+
+    private fun downloadAndExtractModel(targetDir: File) {
+        targetDir.mkdirs()
+        val tmpZip = File(targetDir.parentFile, "vosk-model.zip")
+        URL(MODEL_ZIP_URL).openStream().use { input ->
+            tmpZip.outputStream().use { output -> input.copyTo(output) }
+        }
+
+        ZipInputStream(tmpZip.inputStream()).use { zis ->
+            var entry = zis.nextEntry
+            while (entry != null) {
+                val name = entry.name
+                val normalized = name.substringAfter('/', missingDelimiterValue = name)
+                if (normalized.isNotBlank()) {
+                    val outFile = File(targetDir, normalized)
+                    if (entry.isDirectory) {
+                        outFile.mkdirs()
+                    } else {
+                        outFile.parentFile?.mkdirs()
+                        outFile.outputStream().use { out -> zis.copyTo(out) }
+                    }
+                }
+                zis.closeEntry()
+                entry = zis.nextEntry
+            }
+        }
+        tmpZip.delete()
     }
 }
