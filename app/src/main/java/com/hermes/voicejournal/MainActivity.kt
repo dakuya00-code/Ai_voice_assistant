@@ -229,6 +229,11 @@ class MainActivity : AppCompatActivity() {
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.saved_files_title)
             .setMessage(message)
+            .setNeutralButton("로그 삭제") { _, _ ->
+                UploadHistoryStore.clear(this)
+                toast("업로드 히스토리를 삭제했습니다.")
+                refreshConfigSummary()
+            }
             .setPositiveButton("닫기", null)
             .show()
     }
@@ -504,6 +509,11 @@ class MainActivity : AppCompatActivity() {
                 }
             }.onFailure {
                 statusText.text = "모바일 분석 준비 필요 · assets/vosk-model 미포함"
+                MaterialAlertDialogBuilder(this@MainActivity)
+                    .setTitle("Vosk 모델 필요")
+                    .setMessage("휴대폰 분석을 사용하려면 APK에 assets/vosk-model 폴더가 포함되어야 합니다.\n\n현재는 모델이 없어 음성 파일만 업로드됩니다.")
+                    .setPositiveButton("확인", null)
+                    .show()
             }
             refreshConfigSummary()
         }

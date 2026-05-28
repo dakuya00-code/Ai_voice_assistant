@@ -41,6 +41,11 @@ object UploadHistoryStore {
         }
     }
 
+    fun clear(context: Context) {
+        val file = historyFile(context)
+        if (file.exists()) file.delete()
+    }
+
     private fun historyFile(context: Context): File = File(context.filesDir, HISTORY_FILE_NAME)
 
     private fun UploadedFileEntry.toJson(): JSONObject = JSONObject().apply {
