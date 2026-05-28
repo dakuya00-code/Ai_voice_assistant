@@ -190,6 +190,7 @@ class MainActivity : AppCompatActivity() {
     private fun showSavedFilesDialog() {
         val entries = UploadHistoryStore.readAll(this).takeLast(20).asReversed()
         val pendingFiles = listLocalRecordingFiles().takeLast(20).asReversed()
+        val pendingTextFiles = listLocalAnalysisTextFiles().takeLast(20).asReversed()
         val message = buildString {
             appendLine("로컬에 남아 있는 음성파일")
             if (pendingFiles.isEmpty()) {
@@ -200,12 +201,21 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             appendLine()
+            appendLine("로컬에 남아 있는 분석 텍스트")
+            if (pendingTextFiles.isEmpty()) {
+                appendLine("- 없음")
+            } else {
+                pendingTextFiles.forEachIndexed { index, file ->
+                    appendLine("${index + 1}. ${file.name}")
+                }
+            }
+            appendLine()
             appendLine("업로드 히스토리")
             if (entries.isEmpty()) {
                 appendLine("- 아직 업로드된 파일이 없습니다.")
             } else {
                 entries.forEachIndexed { index, entry ->
-                    appendLine("${index + 1}. ${entry.fileName}")
+                    appendLine("${index + 1}. [${entry.payloadType}] ${entry.fileName}")
                     appendLine("   세션: ${entry.sessionId}")
                     appendLine("   길이: ${entry.durationSeconds}초")
                     appendLine("   시작: ${entry.startedAtIso}")
@@ -260,6 +270,7 @@ class MainActivity : AppCompatActivity() {
                             durationSeconds = meta.durationSeconds,
                             startedAtIso = meta.startedAtIso,
                             uploadedAtIso = java.time.Instant.now().toString(),
+                            payloadType = "audio",
                         )
                     )
                     runCatching { file.delete() }
@@ -276,11 +287,13 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+            val textUploadCount = uploadPendingTextAnalyses(config)
+
             refreshConfigSummary()
             statusText.text = if (failureCount == 0) {
-                "수동 업로드 완료 · ${successCount}개"
+                "수동 업로드 완료 · 음성 ${successCount}개 / 텍스트 ${textUploadCount}개"
             } else {
-                "수동 업로드 일부 실패 · 성공 ${successCount}개 / 실패 ${failureCount}개"
+                "수동 업로드 일부 실패 · 음성 성공 ${successCount}개 / 실패 ${failureCount}개 / 텍스트 ${textUploadCount}개"
             }
             toast(
                 if (failureCount == 0) {
@@ -393,6 +406,49 @@ class MainActivity : AppCompatActivity() {
             .filter { it.isFile && it.extension.equals("m4a", ignoreCase = true) }
             .sortedByDescending { it.lastModified() }
             .toList()
+    }
+
+    private fun listLocalAnalysisTextFiles(): List<java.io.File> {
+        val root = java.io.File(cacheDir, "voice-journal")
+        if (!root.exists()) return emptyList()
+        return root.walkTopDown()
+            .filter { it.isFile && it.extension.equals("txt", ignoreCase = true) }
+            .sortedByDescending { it.lastModified() }
+            .toList()
+    }
+
+    private suspend fun uploadPendingTextAnalyses(config: RecordingConfig): Int {
+        val textFiles = listLocalAnalysisTextFiles().sortedBy { it.lastModified() }
+        var uploaded = 0
+        for (file in textFiles) {
+            val sessionId = file.parentFile?.name ?: config.sessionLabel
+            val text = runCatching { file.readText() }.getOrDefault("").trim()
+            if (text.isBlank()) continue
+
+            val result = uploadClient.uploadAnalysisText(
+                serverUrl = config.serverUrl,
+                sessionId = sessionId,
+                sourceFile = file.name,
+                analyzedText = text,
+            )
+            if (result.isSuccess) {
+                UploadHistoryStore.append(
+                    this,
+                    UploadedFileEntry(
+                        sessionId = sessionId,
+                        fileName = file.name,
+                        chunkIndex = 0,
+                        durationSeconds = 0,
+                        startedAtIso = java.time.Instant.ofEpochMilli(file.lastModified()).toString(),
+                        uploadedAtIso = java.time.Instant.now().toString(),
+                        payloadType = "text",
+                    )
+                )
+                runCatching { file.delete() }
+                uploaded += 1
+            }
+        }
+        return uploaded
     }
 
     private fun beginVoiceMonitoring() {

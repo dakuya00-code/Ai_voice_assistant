@@ -18,6 +18,10 @@ data class UploadResult(
     val audioDeleteError: String?,
 )
 
+data class TextUploadResult(
+    val textSavedPath: String?,
+)
+
 class UploadClient {
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -65,6 +69,39 @@ class UploadClient {
                     transcriptPath = json.optString("transcript_path").ifBlank { null },
                     audioDeleted = json.optBoolean("audio_deleted", false),
                     audioDeleteError = json.optString("audio_delete_error").ifBlank { null },
+                )
+            }
+        }
+    }
+
+    suspend fun uploadAnalysisText(
+        serverUrl: String,
+        sessionId: String,
+        sourceFile: String,
+        analyzedText: String,
+    ): Result<TextUploadResult> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = buildUploadUrl(serverUrl, "/api/upload-text")
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("session_id", sessionId)
+                .addFormDataPart("source_file", sourceFile)
+                .addFormDataPart("analyzed_text", analyzedText)
+                .build()
+
+            val request = Request.Builder()
+                .url(url)
+                .post(body)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val responseText = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    error("text upload failed: HTTP ${response.code} ${responseText.trim()}")
+                }
+                val json = org.json.JSONObject(responseText)
+                TextUploadResult(
+                    textSavedPath = json.optString("text_saved_path").ifBlank { null },
                 )
             }
         }

@@ -76,6 +76,40 @@ def _run_analysis_once() -> None:
             _analysis_running = False
 
 
+@app.post("/api/upload-text")
+async def upload_text(
+    session_id: str = Form(...),
+    source_file: str = Form(""),
+    analyzed_text: str = Form(...),
+):
+    safe_session = "".join(c for c in session_id if c.isalnum() or c in "-_") or "default"
+    session_dir = STORAGE_ROOT / "text_results" / safe_session
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    text_name = f"analysis_{ts}.txt"
+    text_path = session_dir / text_name
+    text_path.write_text(analyzed_text, encoding="utf-8")
+
+    meta = {
+        "session_id": safe_session,
+        "source_file": source_file,
+        "text_path": str(text_path),
+        "created_at": datetime.now().isoformat(),
+        "analysis_mode": "mobile_text",
+    }
+    meta_path = METADATA_DIR / f"{text_path.stem}.json"
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    return JSONResponse(
+        {
+            "status": "ok",
+            "analysis_mode": "mobile_text",
+            "text_saved_path": str(text_path),
+        }
+    )
+
+
 @app.post("/api/upload")
 async def upload(
     session_id: str = Form(...),
