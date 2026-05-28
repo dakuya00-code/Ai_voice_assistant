@@ -18,7 +18,7 @@ object Prefs {
     fun load(context: Context): RecordingConfig {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return RecordingConfig(
-            serverUrl = prefs.getString(KEY_SERVER_URL, "http://<VPS_IP>:8799") ?: "http://<VPS_IP>:8799",
+            serverUrl = prefs.getString(KEY_SERVER_URL, "https://3394dc7db4303708-187-77-115-121.serveousercontent.com") ?: "https://3394dc7db4303708-187-77-115-121.serveousercontent.com",
             uploadPath = prefs.getString(KEY_UPLOAD_PATH, "/api/upload") ?: "/api/upload",
             sessionLabel = prefs.getString(KEY_SESSION_LABEL, "workday") ?: "workday",
         )

@@ -227,7 +227,10 @@ class RecordingService : Service() {
 
         val analysisText = runCatching {
             VoskTranscriber.transcribeFile(this, file)
-        }.getOrNull()?.trim().orEmpty()
+        }.getOrElse { e ->
+            updateNotification("모바일 분석 실패 · ${e.message?.take(60) ?: "Vosk 오류"}")
+            ""
+        }.trim()
 
         if (analysisText.isNotBlank()) {
             runCatching {

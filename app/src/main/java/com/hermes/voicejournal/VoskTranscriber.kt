@@ -11,9 +11,14 @@ object VoskTranscriber {
     @Volatile
     private var model: Model? = null
 
+    fun hasModel(context: Context): Boolean {
+        val modelDir = File(context.filesDir, "vosk-model")
+        return modelDir.exists()
+    }
+
     fun transcribeFile(context: Context, wavFile: File): String {
         if (!wavFile.exists() || wavFile.length() <= 44L) return ""
-        val m = getOrLoadModel(context) ?: return ""
+        val m = getOrLoadModel(context) ?: throw IllegalStateException("vosk-model not found at filesDir/vosk-model")
         val rec = Recognizer(m, 16_000f)
         try {
             FileInputStream(wavFile).use { fis ->

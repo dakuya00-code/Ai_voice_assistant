@@ -141,7 +141,7 @@ class MainActivity : AppCompatActivity() {
         val sessionLabelInput = view.findViewById<TextInputEditText>(R.id.sessionLabelInput)
 
         val current = Prefs.load(this)
-        serverUrlInput.setText(current.serverUrl.ifBlank { "http://<VPS_IP>:8799" })
+        serverUrlInput.setText(current.serverUrl.ifBlank { "https://3394dc7db4303708-187-77-115-121.serveousercontent.com" })
         uploadPathInput.setText(current.uploadPath.ifBlank { "/api/upload" })
         sessionLabelInput.setText(current.sessionLabel.ifBlank { "workday" })
 
@@ -459,6 +459,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshConfigSummary() {
         val config = Prefs.load(this)
+        val modelStatus = if (VoskTranscriber.hasModel(this)) "준비됨" else "없음(filesDir/vosk-model)"
         val usage = "시작: 서비스를 켜면 07:00~20:00 동안 음성 감지 기반으로 녹음/업로드합니다.\n중지: 진행 중인 음성 조각을 마무리한 뒤 완전히 종료합니다."
         recordingUsageText.text = usage
         val summary = buildString {
@@ -469,6 +470,7 @@ class MainActivity : AppCompatActivity() {
             appendLine("- 녹음 시간: 07:00~20:00")
             appendLine("- 녹음 방식: VAD 자동 세그먼트")
             appendLine("- 전사 키: 서버의 Gemini API 키")
+            appendLine("- 모바일 Vosk 모델: ${modelStatus}")
             appendLine()
             appendLine(if (Prefs.isSetupComplete(this@MainActivity)) "설정 완료 · 메뉴에서 다시 수정할 수 있습니다." else "초기 설정이 필요합니다. 오른쪽 위 메뉴에서도 다시 열 수 있습니다.")
         }
