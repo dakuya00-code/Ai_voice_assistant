@@ -242,18 +242,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun startManualUpload() {
         val pendingTextFiles = TextUploadQueue.listPendingTextFiles(this)
-        if (pendingTextFiles.isEmpty()) {
-            toast("수동 업로드할 텍스트 파일이 없습니다.")
-            return
+        statusText.text = if (pendingTextFiles.isEmpty()) {
+            "수동 업로드 준비 중 · 음성파일 전사 후 텍스트 업로드"
+        } else {
+            "수동 업로드 준비 중 · 텍스트 ${pendingTextFiles.size}개"
         }
 
-        statusText.text = "수동 업로드 준비 중 · 텍스트 ${pendingTextFiles.size}개"
         lifecycleScope.launch {
             val config = Prefs.load(this@MainActivity)
             val uploaded = TextUploadQueue.uploadPending(this@MainActivity, config, uploadClient)
             refreshConfigSummary()
             statusText.text = "수동 업로드 완료 · 텍스트 ${uploaded}개"
-            toast("수동 텍스트 업로드를 완료했습니다.")
+            if (uploaded > 0) {
+                toast("수동 텍스트 업로드를 완료했습니다.")
+            } else {
+                toast("업로드할 전사 텍스트가 없습니다. (Vosk 모델/음성 확인)")
+            }
         }
     }
 

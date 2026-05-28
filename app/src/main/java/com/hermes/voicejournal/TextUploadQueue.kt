@@ -13,7 +13,30 @@ object TextUploadQueue {
             .toList()
     }
 
+    private fun listPendingWavFiles(context: Context): List<File> {
+        val root = File(context.cacheDir, "voice-journal")
+        if (!root.exists()) return emptyList()
+        return root.walkTopDown()
+            .filter { it.isFile && it.extension.equals("wav", ignoreCase = true) }
+            .sortedBy { it.lastModified() }
+            .toList()
+    }
+
     suspend fun uploadPending(context: Context, config: RecordingConfig, client: UploadClient): Int {
+        val hasModel = VoskTranscriber.hasModel(context)
+
+        if (hasModel) {
+            listPendingWavFiles(context).forEach { wav ->
+                val textFile = File(wav.parentFile, "${wav.nameWithoutExtension}.txt")
+                if (textFile.exists()) return@forEach
+                val transcript = runCatching { VoskTranscriber.transcribeFile(context, wav) }
+                    .getOrDefault("")
+                    .trim()
+                if (transcript.isBlank()) return@forEach
+                runCatching { textFile.writeText(transcript) }
+            }
+        }
+
         val textFiles = listPendingTextFiles(context)
         var uploaded = 0
         for (file in textFiles) {
@@ -41,6 +64,9 @@ object TextUploadQueue {
                     )
                 )
                 runCatching { file.delete() }
+                val wavPeer = File(file.parentFile, "${file.nameWithoutExtension}.wav")
+                runCatching { if (wavPeer.exists()) wavPeer.delete() }
+                runCatching { File(file.parentFile, "${file.nameWithoutExtension}.json").delete() }
                 uploaded += 1
             }
         }
