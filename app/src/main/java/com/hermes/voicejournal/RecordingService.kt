@@ -222,26 +222,23 @@ class RecordingService : Service() {
             return
         }
 
-        val analysisText = runCatching {
-            VoskTranscriber.transcribeFile(this, file)
-        }.getOrElse { e ->
-            updateNotification("모바일 분석 실패 · ${e.message?.take(60) ?: "Vosk 오류"}")
-            ""
-        }.trim()
+        if (ENABLE_ON_DEVICE_STT) {
+            val analysisText = runCatching {
+                VoskTranscriber.transcribeFile(this, file)
+            }.getOrElse { e ->
+                updateNotification("모바일 분석 실패 · ${e.message?.take(60) ?: "Vosk 오류"}")
+                ""
+            }.trim()
 
-        if (analysisText.isBlank()) {
-            cleanupSegmentArtifacts(file)
-            detector.reset()
-            updateNotification("전사 결과 없음 · 오디오 삭제")
-            return
+            if (analysisText.isNotBlank()) {
+                val textFile = File(file.parentFile, "${file.nameWithoutExtension}.txt")
+                runCatching { textFile.writeText(analysisText) }
+                updateNotification("전사 완료 · 텍스트 대기열 저장")
+            }
         }
 
-        val textFile = File(file.parentFile, "${file.nameWithoutExtension}.txt")
-        runCatching { textFile.writeText(analysisText) }
-
-        cleanupSegmentArtifacts(file)
         currentSegmentIndex += 1
-        updateNotification("전사 완료 · 텍스트 대기열에 저장")
+        updateNotification("라이트 모드 저장 완료 · ${file.name}")
         detector.reset()
     }
 
@@ -443,12 +440,13 @@ class RecordingService : Service() {
     companion object {
         private const val WORK_START_HOUR = 7
         private const val WORK_END_HOUR = 20
-        private const val MAX_SEGMENT_DURATION_MS = 5 * 60 * 1000L
+        private const val MAX_SEGMENT_DURATION_MS = 2 * 60 * 1000L
         private const val MIN_VALID_FILE_BYTES = 2_048L
-        private const val MONITOR_SAMPLE_RATE = 16_000
-        private const val MONITOR_BUFFER_SAMPLES = 1_024
-        private const val SEGMENT_SAMPLE_RATE = 16_000
+        private const val MONITOR_SAMPLE_RATE = 8_000
+        private const val MONITOR_BUFFER_SAMPLES = 2_048
+        private const val SEGMENT_SAMPLE_RATE = 8_000
         private const val SEGMENT_BUFFER_SAMPLES = 2_048
+        private const val ENABLE_ON_DEVICE_STT = false
         const val ACTION_START = "com.hermes.voicejournal.action.START"
         const val ACTION_STOP = "com.hermes.voicejournal.action.STOP"
         const val CHANNEL_ID = "voice_journal_recording"

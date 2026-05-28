@@ -345,7 +345,7 @@ class MainActivity : AppCompatActivity() {
             appendLine("- 업로드 경로: ${config.uploadPath}")
             appendLine("- 세션 이름: ${config.sessionLabel}")
             appendLine("- 녹음 시간: 07:00~20:00")
-            appendLine("- 녹음 방식: VAD 자동 세그먼트")
+            appendLine("- 녹음 방식: VAD 자동 세그먼트 (라이트 8kHz)")
             appendLine("- 전사 키: 서버의 Gemini API 키")
             appendLine("- 모바일 Vosk 모델: ${modelStatus}")
             appendLine()
