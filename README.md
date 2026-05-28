@@ -14,6 +14,25 @@ Android 우선 백그라운드 녹음 앱 + 서버 분석 파이프라인 프로
 - 결과를 TODO, Google Calendar, Telegram으로 전송
 - 앱은 분석 키를 들고 있지 않고, 서버가 통합 오케스트레이션 담당
 
+## 텍스트 파일 기반 Google Calendar 반영
+- 스크립트: `scripts/calendar_from_text.py`
+- 기본 입력 폴더: `/workspace/server_data/text_results`
+- 로그 폴더: `/workspace/server_data/calendar_logs`
+- 상태 파일: `/workspace/server_data/calendar_state.json`
+
+### 실행
+```bash
+cd /workspace/voice-journal
+. .venv/bin/activate
+python scripts/calendar_from_text.py --text-root /workspace/voice-journal/server/server_data/text_results
+```
+- 기본값은 `--apply` 없이 동작하며, **캘린더 생성 없이 planned 로그만 생성**합니다.
+- 실제 생성은 `--apply`를 붙여 실행합니다.
+
+```bash
+python scripts/calendar_from_text.py --apply --text-root /workspace/voice-journal/server/server_data/text_results
+```
+
 ## 현재 구조
 - `scripts/voice_journal.py`: 메인 파이프라인 엔트리 (초안)
 - `data/inbox`: 원본 음성 파일
