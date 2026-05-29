@@ -26,9 +26,13 @@ class JournalResult:
 
 
 def preprocess_audio_with_ffmpeg(audio_path: Path, *, denoise_enabled: bool, denoise_level: int) -> Path:
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = os.getenv("FFMPEG_BIN") or shutil.which("ffmpeg")
     if not ffmpeg:
-        return audio_path
+        local_ffmpeg = Path(__file__).resolve().parent.parent / "tools" / "ffmpeg-7.0.2-amd64-static" / "ffmpeg"
+        if local_ffmpeg.exists():
+            ffmpeg = str(local_ffmpeg)
+        else:
+            return audio_path
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="vj_denoise_"))
     out = tmp_dir / f"{audio_path.stem}_clean.wav"

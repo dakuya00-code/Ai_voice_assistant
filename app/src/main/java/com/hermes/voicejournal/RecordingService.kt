@@ -75,9 +75,7 @@ class RecordingService : Service() {
     }
 
     private fun withinWorkHours(nowMs: Long = System.currentTimeMillis()): Boolean {
-        val calendar = java.util.Calendar.getInstance().apply { timeInMillis = nowMs }
-        val hour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
-        return hour >= WORK_START_HOUR && hour < WORK_END_HOUR
+        return true
     }
 
     private fun workEndAt(nowMs: Long = System.currentTimeMillis()): Long {
@@ -95,7 +93,7 @@ class RecordingService : Service() {
         try {
             while (isRunning && activeJob?.isActive == true) {
                 if (!withinWorkHours()) {
-                    updateNotification("업무 시간 대기 중 · 07:00~20:00")
+                    updateNotification("대기 중")
                     delay(60_000)
                     continue
                 }
@@ -169,7 +167,7 @@ class RecordingService : Service() {
             return
         }
 
-        val chunkStopAtMs = minOf(startedAtMs + MAX_SEGMENT_DURATION_MS, workEndAt(startedAtMs))
+        val chunkStopAtMs = startedAtMs + MAX_SEGMENT_DURATION_MS
         val pcmBuffer = ShortArray(SEGMENT_BUFFER_SAMPLES)
         val pcmOut = java.io.ByteArrayOutputStream()
 
