@@ -23,19 +23,7 @@ object TextUploadQueue {
     }
 
     suspend fun uploadPending(context: Context, config: RecordingConfig, client: UploadClient): Int {
-        val hasModel = VoskTranscriber.hasModel(context)
-
-        if (hasModel) {
-            listPendingWavFiles(context).forEach { wav ->
-                val textFile = File(wav.parentFile, "${wav.nameWithoutExtension}.txt")
-                if (textFile.exists()) return@forEach
-                val transcript = runCatching { VoskTranscriber.transcribeFile(context, wav) }
-                    .getOrDefault("")
-                    .trim()
-                if (transcript.isBlank()) return@forEach
-                runCatching { textFile.writeText(transcript) }
-            }
-        }
+        // Gemini 실시간 전사 경로 사용: 여기서는 로컬 txt 업로드만 처리
 
         val textFiles = listPendingTextFiles(context)
         var uploaded = 0
@@ -49,8 +37,8 @@ object TextUploadQueue {
                 sessionId = sessionId,
                 sourceFile = file.name,
                 analyzedText = text,
-                sttEngine = VoskTranscriber.STT_ENGINE,
-                sttModelId = VoskTranscriber.MODEL_ID,
+                sttEngine = GeminiTranscriber.STT_ENGINE,
+                sttModelId = GeminiTranscriber.MODEL_ID,
                 sttConfidence = estimateTextQualityScore(text),
             )
             if (result.isSuccess) {

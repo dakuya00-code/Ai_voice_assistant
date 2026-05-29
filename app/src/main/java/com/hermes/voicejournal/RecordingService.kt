@@ -230,9 +230,9 @@ class RecordingService : Service() {
 
         if (ENABLE_ON_DEVICE_STT) {
             val analysisText = runCatching {
-                VoskTranscriber.transcribeFile(this, file)
+                GeminiTranscriber.transcribeWav(file, "ko")
             }.getOrElse { e ->
-                updateNotification("모바일 분석 실패 · ${e.message?.take(60) ?: "Vosk 오류"}")
+                updateNotification("모바일 분석 실패 · ${e.message?.take(60) ?: "Gemini 오류"}")
                 ""
             }.trim()
 
