@@ -133,21 +133,30 @@ async def upload_text(
     stt_confidence: float = Form(-1.0),
 ):
     safe_session = "".join(c for c in session_id if c.isalnum() or c in "-_") or "default"
-    session_dir = STORAGE_ROOT / "text_results" / safe_session
-    session_dir.mkdir(parents=True, exist_ok=True)
 
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    text_name = f"analysis_{ts}.txt"
-    text_path = session_dir / text_name
-    text_path.write_text(analyzed_text, encoding="utf-8")
+    day = datetime.now().strftime("%Y-%m-%d")
+    daily_dir = STORAGE_ROOT / "text_results" / day
+    daily_dir.mkdir(parents=True, exist_ok=True)
+    text_path = daily_dir / f"journal_{day}.txt"
+
+    created_at = datetime.now().isoformat()
     quality_score, quality_flag = _estimate_text_quality(analyzed_text)
     hold_calendar = quality_flag in {"very_low", "low", "review"}
 
+    entry = (
+        f"[{created_at}] session={safe_session} source={source_file or '-'} "
+        f"quality={quality_flag} score={quality_score}\n"
+        f"{(analyzed_text or '').strip()}\n\n"
+    )
+    with text_path.open("a", encoding="utf-8") as f:
+        f.write(entry)
+
+    daily_meta_path = METADATA_DIR / f"mobile_text_{day}.jsonl"
     meta = {
         "session_id": safe_session,
         "source_file": source_file,
         "text_path": str(text_path),
-        "created_at": datetime.now().isoformat(),
+        "created_at": created_at,
         "analysis_mode": "mobile_text",
         "stt_engine": stt_engine or "unknown",
         "stt_model_id": stt_model_id or "unknown",
@@ -156,14 +165,15 @@ async def upload_text(
         "quality_flag": quality_flag,
         "calendar_hold": hold_calendar,
     }
-    meta_path = METADATA_DIR / f"{text_path.stem}.json"
-    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    with daily_meta_path.open("a", encoding="utf-8") as mf:
+        mf.write(json.dumps(meta, ensure_ascii=False) + "\n")
 
     return JSONResponse(
         {
             "status": "ok",
             "analysis_mode": "mobile_text",
             "text_saved_path": str(text_path),
+            "daily_file": str(text_path),
             "quality_score": quality_score,
             "quality_flag": quality_flag,
             "calendar_hold": hold_calendar,

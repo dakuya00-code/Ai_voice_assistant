@@ -239,7 +239,9 @@ class RecordingService : Service() {
             if (analysisText.isNotBlank()) {
                 val textFile = File(file.parentFile, "${file.nameWithoutExtension}.txt")
                 runCatching { textFile.writeText(analysisText) }
-                updateNotification("전사 완료 · 텍스트 대기열 저장")
+                runCatching { file.delete() }
+                runCatching { File(file.parentFile, "${file.nameWithoutExtension}.json").delete() }
+                updateNotification("전사 완료 · 텍스트 저장 후 WAV 정리")
             }
         }
 
