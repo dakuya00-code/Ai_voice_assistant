@@ -210,6 +210,7 @@ class RecordingService : Service() {
         }
 
         val pcmBytes = pcmOut.toByteArray()
+        normalizePcm16InPlace(pcmBytes)
         writeWavFile(file, pcmBytes, SEGMENT_SAMPLE_RATE, 1, 16)
 
         val durationSeconds = ((System.currentTimeMillis() - startedAtMs) / 1000L).coerceAtLeast(1L)
@@ -219,6 +220,13 @@ class RecordingService : Service() {
             cleanupSegmentArtifacts(file)
             detector.reset()
             updateNotification("짧은 녹음은 건너뜀 · 대기 중")
+            return
+        }
+
+        if (durationSeconds < MIN_STT_DURATION_SECONDS) {
+            updateNotification("발화가 너무 짧아 분석 건너뜀 · ${durationSeconds}초")
+            currentSegmentIndex += 1
+            detector.reset()
             return
         }
 
@@ -252,7 +260,7 @@ class RecordingService : Service() {
         if (minBufferSize <= 0) return null
         val bufferSize = minBufferSize.coerceAtLeast(MONITOR_BUFFER_SAMPLES * 2)
         return AudioRecord.Builder()
-            .setAudioSource(MediaRecorder.AudioSource.MIC)
+            .setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
             .setAudioFormat(
                 AudioFormat.Builder()
                     .setSampleRate(sampleRate)
@@ -273,7 +281,7 @@ class RecordingService : Service() {
         if (minBufferSize <= 0) return null
         val bufferSize = minBufferSize.coerceAtLeast(SEGMENT_BUFFER_SAMPLES * 2)
         return AudioRecord.Builder()
-            .setAudioSource(MediaRecorder.AudioSource.MIC)
+            .setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
             .setAudioFormat(
                 AudioFormat.Builder()
                     .setSampleRate(SEGMENT_SAMPLE_RATE)
@@ -327,6 +335,35 @@ class RecordingService : Service() {
             sum += kotlin.math.abs(samples[i].toInt())
         }
         return (sum / read).toInt()
+    }
+
+    private fun normalizePcm16InPlace(pcm: ByteArray) {
+        if (pcm.size < 2) return
+        var peak = 0
+        var i = 0
+        while (i + 1 < pcm.size) {
+            val lo = pcm[i].toInt() and 0xFF
+            val hi = pcm[i + 1].toInt()
+            val s = (hi shl 8) or lo
+            val v = kotlin.math.abs(s)
+            if (v > peak) peak = v
+            i += 2
+        }
+        if (peak <= 0) return
+
+        val targetPeak = 26_000.0
+        val gain = (targetPeak / peak.toDouble()).coerceIn(1.0, 6.0)
+
+        i = 0
+        while (i + 1 < pcm.size) {
+            val lo = pcm[i].toInt() and 0xFF
+            val hi = pcm[i + 1].toInt()
+            var s = (hi shl 8) or lo
+            s = (s * gain).toInt().coerceIn(-32768, 32767)
+            pcm[i] = (s and 0xFF).toByte()
+            pcm[i + 1] = ((s shr 8) and 0xFF).toByte()
+            i += 2
+        }
     }
 
     private fun stopMonitorRecorder() {
@@ -442,6 +479,7 @@ class RecordingService : Service() {
         private const val WORK_END_HOUR = 20
         private const val MAX_SEGMENT_DURATION_MS = 2 * 60 * 1000L
         private const val MIN_VALID_FILE_BYTES = 2_048L
+        private const val MIN_STT_DURATION_SECONDS = 2L
         private const val MONITOR_SAMPLE_RATE = 16_000
         private const val MONITOR_BUFFER_SAMPLES = 2_048
         private const val SEGMENT_SAMPLE_RATE = 16_000

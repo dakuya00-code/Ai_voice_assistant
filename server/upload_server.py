@@ -46,7 +46,10 @@ def _estimate_text_quality(text: str) -> tuple[float, str]:
         score -= 0.18
     score = max(0.0, min(score, 1.0))
 
-    if score < 0.20:
+    if len(tokens) < 5:
+        # very short utterances are often unstable for action extraction
+        flag = "review"
+    elif score < 0.20:
         flag = "very_low"
     elif score < 0.40:
         flag = "low"
