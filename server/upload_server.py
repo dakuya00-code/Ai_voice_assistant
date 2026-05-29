@@ -26,6 +26,9 @@ def _estimate_text_quality(text: str) -> tuple[float, str]:
     tokens = [t for t in cleaned.replace("/", " ").split() if t]
     token_unique_ratio = (len(set(tokens)) / len(tokens)) if tokens else 1.0
     one_char_ratio = (sum(1 for t in tokens if len(t) == 1) / len(tokens)) if tokens else 0.0
+    repeated_adjacent = sum(1 for i in range(1, len(tokens)) if tokens[i] == tokens[i - 1])
+    repeated_adjacent_ratio = (repeated_adjacent / max(len(tokens) - 1, 1)) if tokens else 0.0
+    avg_token_len = (sum(len(t) for t in tokens) / len(tokens)) if tokens else 0.0
 
     score = 0.0
     score += min(hangul / n, 1.0) * 0.65
@@ -37,12 +40,18 @@ def _estimate_text_quality(text: str) -> tuple[float, str]:
         score -= 0.2
     if len(tokens) >= 8 and one_char_ratio > 0.55:
         score -= 0.28
+    if len(tokens) >= 8 and repeated_adjacent_ratio > 0.18:
+        score -= 0.25
+    if len(tokens) >= 8 and avg_token_len < 1.9:
+        score -= 0.18
     score = max(0.0, min(score, 1.0))
 
     if score < 0.20:
         flag = "very_low"
     elif score < 0.40:
         flag = "low"
+    elif score < 0.58:
+        flag = "review"
     else:
         flag = "ok"
     return round(score, 3), flag
@@ -129,6 +138,7 @@ async def upload_text(
     text_path = session_dir / text_name
     text_path.write_text(analyzed_text, encoding="utf-8")
     quality_score, quality_flag = _estimate_text_quality(analyzed_text)
+    hold_calendar = quality_flag in {"very_low", "low", "review"}
 
     meta = {
         "session_id": safe_session,
@@ -141,6 +151,7 @@ async def upload_text(
         "stt_confidence": None if stt_confidence < 0 else stt_confidence,
         "quality_score": quality_score,
         "quality_flag": quality_flag,
+        "calendar_hold": hold_calendar,
     }
     meta_path = METADATA_DIR / f"{text_path.stem}.json"
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -152,6 +163,7 @@ async def upload_text(
             "text_saved_path": str(text_path),
             "quality_score": quality_score,
             "quality_flag": quality_flag,
+            "calendar_hold": hold_calendar,
             "stt_engine": stt_engine or "unknown",
             "stt_model_id": stt_model_id or "unknown",
         }
