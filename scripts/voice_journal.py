@@ -23,12 +23,37 @@ class JournalResult:
     actions: list[dict[str, Any]]
 
 
-def transcribe_with_whisper(audio_path: Path, model_name: str, language: str) -> str:
+def transcribe_with_whisper_local(audio_path: Path, model_name: str, language: str) -> str:
     import whisper  # lazy import
 
     model = whisper.load_model(model_name)
     result = model.transcribe(str(audio_path), language=language)
     return (result.get("text") or "").strip()
+
+
+def transcribe_with_openai(audio_path: Path, stt_model: str, language: str, api_key: str) -> str:
+    from openai import OpenAI
+
+    client = OpenAI(api_key=api_key)
+    with audio_path.open("rb") as f:
+        tr = client.audio.transcriptions.create(
+            model=stt_model,
+            file=f,
+            language=language,
+        )
+    text = getattr(tr, "text", "")
+    return (text or "").strip()
+
+
+def transcribe_audio(audio_path: Path, *, stt_provider: str, local_model_name: str, openai_stt_model: str, language: str, openai_key: str | None) -> str:
+    provider = (stt_provider or "openai").strip().lower()
+    if provider == "openai":
+        if not openai_key:
+            raise RuntimeError("VOICE_STT_PROVIDER=openai 인데 OPENAI_API_KEY가 비어 있습니다.")
+        return transcribe_with_openai(audio_path, openai_stt_model, language, openai_key)
+    if provider == "local":
+        return transcribe_with_whisper_local(audio_path, local_model_name, language)
+    raise RuntimeError(f"지원하지 않는 VOICE_STT_PROVIDER: {stt_provider}")
 
 
 def summarize_with_openai(transcript: str, model: str, api_key: str) -> tuple[str, list[dict[str, Any]]]:
@@ -88,8 +113,17 @@ def process_file(
     language: str,
     openai_key: str | None,
     openai_model: str,
+    stt_provider: str,
+    openai_stt_model: str,
 ) -> JournalResult:
-    transcript = transcribe_with_whisper(f, whisper_model, language)
+    transcript = transcribe_audio(
+        f,
+        stt_provider=stt_provider,
+        local_model_name=whisper_model,
+        openai_stt_model=openai_stt_model,
+        language=language,
+        openai_key=openai_key,
+    )
     if openai_key:
         summary, actions = summarize_with_openai(transcript, openai_model, openai_key)
     else:
@@ -147,6 +181,8 @@ def main() -> None:
     results.mkdir(parents=True, exist_ok=True)
 
     whisper_model = os.getenv("WHISPER_MODEL", "base")
+    stt_provider = os.getenv("VOICE_STT_PROVIDER", "openai")
+    openai_stt_model = os.getenv("OPENAI_STT_MODEL", "whisper-1")
     language = os.getenv("VOICE_JOURNAL_LANGUAGE", "ko")
     max_files = int(os.getenv("VOICE_JOURNAL_MAX_FILES", "10"))
     openai_key = os.getenv("OPENAI_API_KEY")
@@ -156,7 +192,10 @@ def main() -> None:
     tg_chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
     files = [p for p in inbox.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_EXTS][:max_files]
-    print(f"[voice-journal] inbox={inbox} files={len(files)} dry_run={args.dry_run}")
+    print(
+        f"[voice-journal] inbox={inbox} files={len(files)} dry_run={args.dry_run} "
+        f"stt_provider={stt_provider} stt_model={openai_stt_model if stt_provider == 'openai' else whisper_model}"
+    )
 
     for f in files:
         print(f"- 처리 시작: {f.name}")
@@ -171,6 +210,8 @@ def main() -> None:
                 language=language,
                 openai_key=openai_key,
                 openai_model=openai_model,
+                stt_provider=stt_provider,
+                openai_stt_model=openai_stt_model,
             )
             if tg_token and tg_chat_id:
                 msg = (
