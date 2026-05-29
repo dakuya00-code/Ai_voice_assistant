@@ -61,6 +61,7 @@ object TextUploadQueue {
                         startedAtIso = java.time.Instant.ofEpochMilli(file.lastModified()).toString(),
                         uploadedAtIso = java.time.Instant.now().toString(),
                         payloadType = "text",
+                        fileSizeBytes = file.length(),
                     )
                 )
                 runCatching { file.delete() }

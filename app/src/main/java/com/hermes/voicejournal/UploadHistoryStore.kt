@@ -15,6 +15,7 @@ data class UploadedFileEntry(
     val startedAtIso: String,
     val uploadedAtIso: String,
     val payloadType: String = "audio",
+    val fileSizeBytes: Long = 0,
 )
 
 object UploadHistoryStore {
@@ -56,6 +57,7 @@ object UploadHistoryStore {
         put("startedAtIso", startedAtIso)
         put("uploadedAtIso", uploadedAtIso)
         put("payloadType", payloadType)
+        put("fileSizeBytes", fileSizeBytes)
     }
 
     private fun JSONObject.toEntry(): UploadedFileEntry = UploadedFileEntry(
@@ -66,5 +68,6 @@ object UploadHistoryStore {
         startedAtIso = getString("startedAtIso"),
         uploadedAtIso = getString("uploadedAtIso"),
         payloadType = optString("payloadType").ifBlank { "audio" },
+        fileSizeBytes = optLong("fileSizeBytes", 0),
     )
 }

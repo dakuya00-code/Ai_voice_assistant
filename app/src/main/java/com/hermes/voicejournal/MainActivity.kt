@@ -220,7 +220,11 @@ class MainActivity : AppCompatActivity() {
                 entries.forEachIndexed { index, entry ->
                     appendLine("${index + 1}. [${entry.payloadType}] ${entry.fileName}")
                     appendLine("   세션: ${entry.sessionId}")
-                    appendLine("   길이: ${entry.durationSeconds}초")
+                    if (entry.payloadType == "text") {
+                        appendLine("   크기: ${entry.fileSizeBytes} bytes")
+                    } else {
+                        appendLine("   길이: ${entry.durationSeconds}초")
+                    }
                     appendLine("   시작: ${entry.startedAtIso}")
                     appendLine("   업로드: ${entry.uploadedAtIso}")
                     appendLine()
