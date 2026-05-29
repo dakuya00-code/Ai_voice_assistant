@@ -154,7 +154,7 @@ class RecordingService : Service() {
             detector.reset()
             return
         }
-
+        val cfg = config ?: Prefs.load(this)
 
         val startedAtMs = System.currentTimeMillis()
         val file = createSegmentFile()
