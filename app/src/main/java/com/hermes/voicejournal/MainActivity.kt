@@ -245,23 +245,59 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startManualUpload() {
-        val pendingTextFiles = TextUploadQueue.listPendingTextFiles(this)
-        statusText.text = if (pendingTextFiles.isEmpty()) {
-            "수동 업로드 준비 중 · 음성파일 전사 후 텍스트 업로드"
-        } else {
-            "수동 업로드 준비 중 · 텍스트 ${pendingTextFiles.size}개"
-        }
+        val pendingWavFiles = listLocalRecordingFiles().filter { it.extension.equals("wav", ignoreCase = true) }
+        statusText.text = "수동 업로드 준비 중 · WAV ${pendingWavFiles.size}개"
 
         lifecycleScope.launch {
             val config = Prefs.load(this@MainActivity)
-            val uploaded = TextUploadQueue.uploadPending(this@MainActivity, config, uploadClient)
+            var successCount = 0
+            var failureCount = 0
+
+            for (file in pendingWavFiles) {
+                val meta = readPendingUploadMeta(file, config.sessionLabel)
+                val result = uploadClient.uploadChunk(
+                    serverUrl = config.serverUrl,
+                    uploadPath = config.uploadPath,
+                    sessionId = meta.sessionId,
+                    chunkIndex = meta.chunkIndex,
+                    durationSeconds = meta.durationSeconds,
+                    startedAtIso = meta.startedAtIso,
+                    file = file,
+                )
+
+                if (result.isSuccess) {
+                    UploadHistoryStore.append(
+                        this@MainActivity,
+                        UploadedFileEntry(
+                            sessionId = meta.sessionId,
+                            fileName = file.name,
+                            chunkIndex = meta.chunkIndex,
+                            durationSeconds = meta.durationSeconds,
+                            startedAtIso = meta.startedAtIso,
+                            uploadedAtIso = java.time.Instant.now().toString(),
+                            payloadType = "audio",
+                            fileSizeBytes = file.length(),
+                        )
+                    )
+                    runCatching { file.delete() }
+                    runCatching { java.io.File(file.parentFile, "${file.nameWithoutExtension}.json").delete() }
+                    successCount += 1
+                } else {
+                    failureCount += 1
+                }
+            }
+
             val remainingWav = listLocalRecordingFiles().count { it.extension.equals("wav", ignoreCase = true) }
             refreshConfigSummary()
-            statusText.text = "수동 업로드 완료 · 텍스트 ${uploaded}개 / 잔여 WAV ${remainingWav}개"
-            if (uploaded > 0) {
-                toast("수동 텍스트 업로드를 완료했습니다.")
+            statusText.text = if (failureCount == 0) {
+                "수동 업로드 완료 · 음성 ${successCount}개 / 잔여 WAV ${remainingWav}개"
             } else {
-                toast("업로드할 전사 텍스트가 없습니다. (Vosk 모델/음성 확인)")
+                "수동 업로드 일부 실패 · 음성 성공 ${successCount}개 / 실패 ${failureCount}개"
+            }
+            if (successCount > 0) {
+                toast("수동 음성 업로드를 완료했습니다.")
+            } else {
+                toast("업로드할 WAV 파일이 없거나 업로드에 실패했습니다.")
             }
         }
     }
@@ -317,6 +353,41 @@ class MainActivity : AppCompatActivity() {
             .setMessage(message)
             .setPositiveButton("닫기", null)
             .show()
+    }
+
+    private data class PendingUploadMeta(
+        val sessionId: String,
+        val chunkIndex: Int,
+        val durationSeconds: Long,
+        val startedAtIso: String,
+    )
+
+    private fun readPendingUploadMeta(file: java.io.File, fallbackSessionLabel: String): PendingUploadMeta {
+        val sidecar = java.io.File(file.parentFile, "${file.nameWithoutExtension}.json")
+        if (!sidecar.exists()) {
+            return PendingUploadMeta(
+                sessionId = file.parentFile?.name ?: fallbackSessionLabel,
+                chunkIndex = 0,
+                durationSeconds = 0,
+                startedAtIso = java.time.Instant.ofEpochMilli(file.lastModified()).toString(),
+            )
+        }
+        return runCatching {
+            val json = org.json.JSONObject(sidecar.readText())
+            PendingUploadMeta(
+                sessionId = json.optString("session_id").ifBlank { file.parentFile?.name ?: fallbackSessionLabel },
+                chunkIndex = json.optInt("chunk_index", 0),
+                durationSeconds = json.optLong("duration_seconds", 0L),
+                startedAtIso = json.optString("started_at").ifBlank { java.time.Instant.ofEpochMilli(file.lastModified()).toString() },
+            )
+        }.getOrElse {
+            PendingUploadMeta(
+                sessionId = file.parentFile?.name ?: fallbackSessionLabel,
+                chunkIndex = 0,
+                durationSeconds = 0,
+                startedAtIso = java.time.Instant.ofEpochMilli(file.lastModified()).toString(),
+            )
+        }
     }
 
     private fun listLocalRecordingFiles(): List<java.io.File> {
