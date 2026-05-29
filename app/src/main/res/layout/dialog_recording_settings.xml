@@ -49,4 +49,17 @@
             android:inputType="text"
             android:text="workday" />
     </com.google.android.material.textfield.TextInputLayout>
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/geminiApiKeyLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:hint="Gemini API Key (모바일 전사용)">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/geminiApiKeyInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textPassword" />
+    </com.google.android.material.textfield.TextInputLayout>
 </LinearLayout>

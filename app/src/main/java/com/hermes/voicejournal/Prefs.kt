@@ -6,6 +6,7 @@ data class RecordingConfig(
     val serverUrl: String,
     val uploadPath: String,
     val sessionLabel: String,
+    val geminiApiKey: String,
 )
 
 object Prefs {
@@ -13,6 +14,7 @@ object Prefs {
     private const val KEY_SERVER_URL = "server_url"
     private const val KEY_UPLOAD_PATH = "upload_path"
     private const val KEY_SESSION_LABEL = "session_label"
+    private const val KEY_GEMINI_API_KEY = "gemini_api_key"
     private const val KEY_SETUP_COMPLETE = "setup_complete"
 
     fun load(context: Context): RecordingConfig {
@@ -21,6 +23,7 @@ object Prefs {
             serverUrl = prefs.getString(KEY_SERVER_URL, "https://3394dc7db4303708-187-77-115-121.serveousercontent.com") ?: "https://3394dc7db4303708-187-77-115-121.serveousercontent.com",
             uploadPath = prefs.getString(KEY_UPLOAD_PATH, "/api/upload") ?: "/api/upload",
             sessionLabel = prefs.getString(KEY_SESSION_LABEL, "workday") ?: "workday",
+            geminiApiKey = prefs.getString(KEY_GEMINI_API_KEY, "") ?: "",
         )
     }
 
@@ -30,6 +33,7 @@ object Prefs {
             .putString(KEY_SERVER_URL, config.serverUrl)
             .putString(KEY_UPLOAD_PATH, config.uploadPath)
             .putString(KEY_SESSION_LABEL, config.sessionLabel)
+            .putString(KEY_GEMINI_API_KEY, config.geminiApiKey)
             .apply()
     }
 

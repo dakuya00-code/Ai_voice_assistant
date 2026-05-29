@@ -139,14 +139,17 @@ class MainActivity : AppCompatActivity() {
         val serverUrlLayout = view.findViewById<TextInputLayout>(R.id.serverUrlLayout)
         val uploadPathLayout = view.findViewById<TextInputLayout>(R.id.uploadPathLayout)
         val sessionLabelLayout = view.findViewById<TextInputLayout>(R.id.sessionLabelLayout)
+        val geminiApiKeyLayout = view.findViewById<TextInputLayout>(R.id.geminiApiKeyLayout)
         val serverUrlInput = view.findViewById<TextInputEditText>(R.id.serverUrlInput)
         val uploadPathInput = view.findViewById<TextInputEditText>(R.id.uploadPathInput)
         val sessionLabelInput = view.findViewById<TextInputEditText>(R.id.sessionLabelInput)
+        val geminiApiKeyInput = view.findViewById<TextInputEditText>(R.id.geminiApiKeyInput)
 
         val current = Prefs.load(this)
         serverUrlInput.setText(current.serverUrl.ifBlank { "https://3394dc7db4303708-187-77-115-121.serveousercontent.com" })
         uploadPathInput.setText(current.uploadPath.ifBlank { "/api/upload" })
         sessionLabelInput.setText(current.sessionLabel.ifBlank { "workday" })
+        geminiApiKeyInput.setText(current.geminiApiKey)
 
         val dialog = MaterialAlertDialogBuilder(this)
             .setTitle(if (firstRun) getString(R.string.first_run_title) else getString(R.string.settings_title))
@@ -161,15 +164,21 @@ class MainActivity : AppCompatActivity() {
                 serverUrlLayout.error = null
                 uploadPathLayout.error = null
                 sessionLabelLayout.error = null
+                geminiApiKeyLayout.error = null
 
                 val cfg = RecordingConfig(
                     serverUrl = serverUrlInput.text?.toString().orEmpty().trim(),
                     uploadPath = uploadPathInput.text?.toString().orEmpty().trim().ifBlank { "/api/upload" },
                     sessionLabel = sessionLabelInput.text?.toString().orEmpty().trim().ifBlank { "workday" },
+                    geminiApiKey = geminiApiKeyInput.text?.toString().orEmpty().trim(),
                 )
 
                 if (cfg.serverUrl.isBlank()) {
                     serverUrlLayout.error = "서버 URL을 입력해 주세요."
+                    return@setOnClickListener
+                }
+                if (cfg.geminiApiKey.isBlank()) {
+                    geminiApiKeyLayout.error = "Gemini API Key를 입력해 주세요."
                     return@setOnClickListener
                 }
 
@@ -376,7 +385,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshConfigSummary() {
         val config = Prefs.load(this)
-        val modelStatus = if (VoskTranscriber.hasModel(this)) "준비됨" else "없음(filesDir/vosk-model)"
+        val keyStatus = if (config.geminiApiKey.isBlank()) "미입력" else "입력됨"
         val usage = "시작: 서비스를 켜면 07:00~20:00 동안 음성 감지 기반으로 녹음/업로드합니다.\n중지: 진행 중인 음성 조각을 마무리한 뒤 완전히 종료합니다."
         recordingUsageText.text = usage
         val summary = buildString {
@@ -388,6 +397,7 @@ class MainActivity : AppCompatActivity() {
             appendLine("- 녹음 방식: VAD 자동 세그먼트 (16kHz)")
             appendLine("- 전사 방식: 모바일 Gemini STT → 텍스트 업로드")
             appendLine("- 모바일 전사 상태: 앱 내 Gemini 호출")
+            appendLine("- Gemini API Key: ${keyStatus}")
             appendLine()
             appendLine(if (Prefs.isSetupComplete(this@MainActivity)) "설정 완료 · 메뉴에서 다시 수정할 수 있습니다." else "초기 설정이 필요합니다. 오른쪽 위 메뉴에서도 다시 열 수 있습니다.")
         }
@@ -411,27 +421,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun ensureVoskModelReady() {
-        lifecycleScope.launch {
-            if (VoskTranscriber.hasModel(this@MainActivity)) return@launch
-            statusText.text = "모바일 분석 준비 중 · Vosk 모델 설치"
-            val result = withContext(Dispatchers.IO) {
-                VoskModelInstaller.ensureInstalled(this@MainActivity)
-            }
-            result.onSuccess { installedFrom ->
-                when (installedFrom) {
-                    "installed_from_assets" -> toast("Vosk 모델 설치 완료(앱 내장)")
-                    "installed_from_download" -> toast("Vosk 모델 다운로드 설치 완료")
-                }
-            }.onFailure {
-                statusText.text = "모바일 분석 준비 실패 · Vosk 모델 설치 오류"
-                MaterialAlertDialogBuilder(this@MainActivity)
-                    .setTitle("Vosk 모델 필요")
-                    .setMessage("Vosk 모델 설치에 실패했습니다. 네트워크 연결 상태를 확인하고 앱을 다시 실행해 주세요.")
-                    .setPositiveButton("확인", null)
-                    .show()
-            }
-            refreshConfigSummary()
-        }
+        // Gemini 모바일 전사 사용: Vosk 모델 설치 단계 비활성화
     }
 
     private fun hapticSuccess(view: android.view.View) {

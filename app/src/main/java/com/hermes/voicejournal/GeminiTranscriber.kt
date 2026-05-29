@@ -14,8 +14,7 @@ object GeminiTranscriber {
     const val STT_ENGINE = "gemini"
     const val MODEL_ID = "gemini-1.5-flash"
 
-    // TODO: 실제 키 값으로 설정 필요
-    private const val GEMINI_API_KEY = ""
+    // API 키는 설정 화면에 입력된 값을 사용
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -23,8 +22,8 @@ object GeminiTranscriber {
         .writeTimeout(180, TimeUnit.SECONDS)
         .build()
 
-    fun transcribeWav(file: File, language: String = "ko"): String {
-        if (GEMINI_API_KEY.isBlank()) throw IllegalStateException("Gemini API key missing")
+    fun transcribeWav(file: File, apiKey: String, language: String = "ko"): String {
+        if (apiKey.isBlank()) throw IllegalStateException("Gemini API key missing")
         if (!file.exists() || file.length() <= 44L) return ""
 
         val b64 = Base64.getEncoder().encodeToString(file.readBytes())
@@ -60,7 +59,7 @@ object GeminiTranscriber {
             .addPathSegment("v1beta")
             .addPathSegment("models")
             .addPathSegment("$MODEL_ID:generateContent")
-            .addQueryParameter("key", GEMINI_API_KEY)
+            .addQueryParameter("key", apiKey)
             .build()
             .toString()
 

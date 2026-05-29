@@ -230,7 +230,7 @@ class RecordingService : Service() {
 
         if (ENABLE_ON_DEVICE_STT) {
             val analysisText = runCatching {
-                GeminiTranscriber.transcribeWav(file, "ko")
+                GeminiTranscriber.transcribeWav(file, cfg?.geminiApiKey.orEmpty(), "ko")
             }.getOrElse { e ->
                 updateNotification("모바일 분석 실패 · ${e.message?.take(60) ?: "Gemini 오류"}")
                 ""
