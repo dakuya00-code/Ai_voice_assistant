@@ -442,9 +442,9 @@ class RecordingService : Service() {
         private const val WORK_END_HOUR = 20
         private const val MAX_SEGMENT_DURATION_MS = 2 * 60 * 1000L
         private const val MIN_VALID_FILE_BYTES = 2_048L
-        private const val MONITOR_SAMPLE_RATE = 8_000
+        private const val MONITOR_SAMPLE_RATE = 16_000
         private const val MONITOR_BUFFER_SAMPLES = 2_048
-        private const val SEGMENT_SAMPLE_RATE = 8_000
+        private const val SEGMENT_SAMPLE_RATE = 16_000
         private const val SEGMENT_BUFFER_SAMPLES = 2_048
         private const val ENABLE_ON_DEVICE_STT = true
         const val ACTION_START = "com.hermes.voicejournal.action.START"
