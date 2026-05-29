@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 import argparse
+import base64
 import json
 import os
 import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -10,7 +13,6 @@ from typing import Any
 
 import requests
 from dotenv import load_dotenv
-
 
 AUDIO_EXTS = {".wav", ".mp3", ".m4a", ".ogg", ".webm", ".flac"}
 
@@ -23,43 +25,99 @@ class JournalResult:
     actions: list[dict[str, Any]]
 
 
+def preprocess_audio_with_ffmpeg(audio_path: Path, *, denoise_enabled: bool, denoise_level: int) -> Path:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return audio_path
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="vj_denoise_"))
+    out = tmp_dir / f"{audio_path.stem}_clean.wav"
+
+    filters = ["highpass=f=120", "lowpass=f=7000", "loudnorm"]
+    if denoise_enabled:
+        nr = max(5, min(40, denoise_level))
+        filters.insert(0, f"afftdn=nr={nr}")
+
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(audio_path),
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-af",
+        ",".join(filters),
+        str(out),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0 or not out.exists():
+        return audio_path
+    return out
+
+
+def _gemini_generate(model: str, api_key: str, payload: dict[str, Any]) -> str:
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    resp = requests.post(url, json=payload, timeout=180)
+    resp.raise_for_status()
+    data = resp.json()
+    candidates = data.get("candidates") or []
+    if not candidates:
+        return ""
+    parts = candidates[0].get("content", {}).get("parts", [])
+    texts = [p.get("text", "") for p in parts if p.get("text")]
+    return "\n".join(texts).strip()
+
+
+def transcribe_with_gemini(audio_path: Path, model: str, language: str, api_key: str) -> str:
+    mime = "audio/wav" if audio_path.suffix.lower() == ".wav" else "audio/mpeg"
+    encoded = base64.b64encode(audio_path.read_bytes()).decode("utf-8")
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": f"다음 오디오를 {language}로 정확히 받아쓰기 하세요. 설명 없이 전사 텍스트만 출력하세요."},
+                    {"inline_data": {"mime_type": mime, "data": encoded}},
+                ]
+            }
+        ]
+    }
+    return _gemini_generate(model, api_key, payload)
+
+
 def transcribe_with_whisper_local(audio_path: Path, model_name: str, language: str) -> str:
-    import whisper  # lazy import
+    import whisper
 
     model = whisper.load_model(model_name)
     result = model.transcribe(str(audio_path), language=language)
     return (result.get("text") or "").strip()
 
 
-def transcribe_with_openai(audio_path: Path, stt_model: str, language: str, api_key: str) -> str:
-    from openai import OpenAI
+def transcribe_audio(
+    audio_path: Path,
+    *,
+    stt_provider: str,
+    local_model_name: str,
+    gemini_stt_model: str,
+    language: str,
+    gemini_key: str | None,
+    denoise_enabled: bool,
+    denoise_level: int,
+) -> str:
+    provider = (stt_provider or "gemini").strip().lower()
+    cleaned = preprocess_audio_with_ffmpeg(audio_path, denoise_enabled=denoise_enabled, denoise_level=denoise_level)
 
-    client = OpenAI(api_key=api_key)
-    with audio_path.open("rb") as f:
-        tr = client.audio.transcriptions.create(
-            model=stt_model,
-            file=f,
-            language=language,
-        )
-    text = getattr(tr, "text", "")
-    return (text or "").strip()
-
-
-def transcribe_audio(audio_path: Path, *, stt_provider: str, local_model_name: str, openai_stt_model: str, language: str, openai_key: str | None) -> str:
-    provider = (stt_provider or "openai").strip().lower()
-    if provider == "openai":
-        if not openai_key:
-            raise RuntimeError("VOICE_STT_PROVIDER=openai 인데 OPENAI_API_KEY가 비어 있습니다.")
-        return transcribe_with_openai(audio_path, openai_stt_model, language, openai_key)
+    if provider == "gemini":
+        if not gemini_key:
+            raise RuntimeError("VOICE_STT_PROVIDER=gemini 인데 GEMINI_API_KEY가 비어 있습니다.")
+        return transcribe_with_gemini(cleaned, gemini_stt_model, language, gemini_key)
     if provider == "local":
-        return transcribe_with_whisper_local(audio_path, local_model_name, language)
+        return transcribe_with_whisper_local(cleaned, local_model_name, language)
     raise RuntimeError(f"지원하지 않는 VOICE_STT_PROVIDER: {stt_provider}")
 
 
-def summarize_with_openai(transcript: str, model: str, api_key: str) -> tuple[str, list[dict[str, Any]]]:
-    from openai import OpenAI
-
-    client = OpenAI(api_key=api_key)
+def summarize_with_gemini(transcript: str, model: str, api_key: str) -> tuple[str, list[dict[str, Any]]]:
     prompt = (
         "당신은 음성 저널 분석기입니다. 한국어로 답하세요.\n"
         "1) transcript를 5줄 이내 핵심요약\n"
@@ -67,18 +125,12 @@ def summarize_with_openai(transcript: str, model: str, api_key: str) -> tuple[st
         "JSON 스키마: [{\"title\": str, \"due\": str|null, \"priority\": \"high\"|\"medium\"|\"low\"}]\n"
         "가능한 날짜/시간 표현은 ISO-like(예: 2026-05-27 14:00)로 정규화 시도.\n"
         "반드시 아래 형식으로만 출력:\n"
-        "SUMMARY:\n<요약>\n\nACTIONS_JSON:\n<json>"
+        "SUMMARY:\n<요약>\n\nACTIONS_JSON:\n<json>\n\n"
+        f"TRANSCRIPT:\n{transcript}"
     )
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    content = _gemini_generate(model, api_key, payload)
 
-    resp = client.chat.completions.create(
-        model=model,
-        temperature=0.2,
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": transcript},
-        ],
-    )
-    content = resp.choices[0].message.content or ""
     if "ACTIONS_JSON:" not in content:
         return content.strip(), []
 
@@ -111,21 +163,26 @@ def process_file(
     out_dir: Path,
     whisper_model: str,
     language: str,
-    openai_key: str | None,
-    openai_model: str,
+    gemini_key: str | None,
+    gemini_model: str,
     stt_provider: str,
-    openai_stt_model: str,
+    gemini_stt_model: str,
+    denoise_enabled: bool,
+    denoise_level: int,
 ) -> JournalResult:
     transcript = transcribe_audio(
         f,
         stt_provider=stt_provider,
         local_model_name=whisper_model,
-        openai_stt_model=openai_stt_model,
+        gemini_stt_model=gemini_stt_model,
         language=language,
-        openai_key=openai_key,
+        gemini_key=gemini_key,
+        denoise_enabled=denoise_enabled,
+        denoise_level=denoise_level,
     )
-    if openai_key:
-        summary, actions = summarize_with_openai(transcript, openai_model, openai_key)
+
+    if gemini_key:
+        summary, actions = summarize_with_gemini(transcript, gemini_model, gemini_key)
     else:
         summary, actions = fallback_summary(transcript)
 
@@ -142,6 +199,9 @@ def process_file(
                 "transcript": result.transcript,
                 "summary": result.summary,
                 "actions": result.actions,
+                "stt_provider": stt_provider,
+                "stt_model": gemini_stt_model if stt_provider == "gemini" else whisper_model,
+                "denoise_enabled": denoise_enabled,
                 "created_at": datetime.now().isoformat(),
             },
             ensure_ascii=False,
@@ -181,12 +241,14 @@ def main() -> None:
     results.mkdir(parents=True, exist_ok=True)
 
     whisper_model = os.getenv("WHISPER_MODEL", "base")
-    stt_provider = os.getenv("VOICE_STT_PROVIDER", "openai")
-    openai_stt_model = os.getenv("OPENAI_STT_MODEL", "whisper-1")
+    stt_provider = os.getenv("VOICE_STT_PROVIDER", "gemini")
+    gemini_stt_model = os.getenv("GEMINI_STT_MODEL", "gemini-1.5-flash")
     language = os.getenv("VOICE_JOURNAL_LANGUAGE", "ko")
     max_files = int(os.getenv("VOICE_JOURNAL_MAX_FILES", "10"))
-    openai_key = os.getenv("OPENAI_API_KEY")
-    openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    gemini_model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    denoise_enabled = os.getenv("VOICE_DENOISE_ENABLED", "1") == "1"
+    denoise_level = int(os.getenv("VOICE_DENOISE_LEVEL", "20"))
 
     tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
     tg_chat_id = os.getenv("TELEGRAM_CHAT_ID")
@@ -194,7 +256,7 @@ def main() -> None:
     files = [p for p in inbox.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_EXTS][:max_files]
     print(
         f"[voice-journal] inbox={inbox} files={len(files)} dry_run={args.dry_run} "
-        f"stt_provider={stt_provider} stt_model={openai_stt_model if stt_provider == 'openai' else whisper_model}"
+        f"stt_provider={stt_provider} stt_model={gemini_stt_model if stt_provider == 'gemini' else whisper_model} denoise={denoise_enabled}"
     )
 
     for f in files:
@@ -208,10 +270,12 @@ def main() -> None:
                 out_dir=results,
                 whisper_model=whisper_model,
                 language=language,
-                openai_key=openai_key,
-                openai_model=openai_model,
+                gemini_key=gemini_key,
+                gemini_model=gemini_model,
                 stt_provider=stt_provider,
-                openai_stt_model=openai_stt_model,
+                gemini_stt_model=gemini_stt_model,
+                denoise_enabled=denoise_enabled,
+                denoise_level=denoise_level,
             )
             if tg_token and tg_chat_id:
                 msg = (
