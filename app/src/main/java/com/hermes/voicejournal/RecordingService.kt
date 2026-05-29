@@ -484,7 +484,7 @@ class RecordingService : Service() {
         private const val MONITOR_BUFFER_SAMPLES = 2_048
         private const val SEGMENT_SAMPLE_RATE = 16_000
         private const val SEGMENT_BUFFER_SAMPLES = 2_048
-        private const val ENABLE_ON_DEVICE_STT = false
+        private const val ENABLE_ON_DEVICE_STT = true
         const val ACTION_START = "com.hermes.voicejournal.action.START"
         const val ACTION_STOP = "com.hermes.voicejournal.action.STOP"
         const val CHANNEL_ID = "voice_journal_recording"

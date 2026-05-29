@@ -245,59 +245,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startManualUpload() {
-        val pendingWavFiles = listLocalRecordingFiles().filter { it.extension.equals("wav", ignoreCase = true) }
-        statusText.text = "수동 업로드 준비 중 · WAV ${pendingWavFiles.size}개"
-
         lifecycleScope.launch {
             val config = Prefs.load(this@MainActivity)
-            var successCount = 0
-            var failureCount = 0
+            statusText.text = "수동 업로드 준비 중 · 텍스트 큐 점검"
 
-            for (file in pendingWavFiles) {
-                val meta = readPendingUploadMeta(file, config.sessionLabel)
-                val result = uploadClient.uploadChunk(
-                    serverUrl = config.serverUrl,
-                    uploadPath = config.uploadPath,
-                    sessionId = meta.sessionId,
-                    chunkIndex = meta.chunkIndex,
-                    durationSeconds = meta.durationSeconds,
-                    startedAtIso = meta.startedAtIso,
-                    file = file,
-                )
-
-                if (result.isSuccess) {
-                    UploadHistoryStore.append(
-                        this@MainActivity,
-                        UploadedFileEntry(
-                            sessionId = meta.sessionId,
-                            fileName = file.name,
-                            chunkIndex = meta.chunkIndex,
-                            durationSeconds = meta.durationSeconds,
-                            startedAtIso = meta.startedAtIso,
-                            uploadedAtIso = java.time.Instant.now().toString(),
-                            payloadType = "audio",
-                            fileSizeBytes = file.length(),
-                        )
-                    )
-                    runCatching { file.delete() }
-                    runCatching { java.io.File(file.parentFile, "${file.nameWithoutExtension}.json").delete() }
-                    successCount += 1
-                } else {
-                    failureCount += 1
-                }
-            }
-
-            val remainingWav = listLocalRecordingFiles().count { it.extension.equals("wav", ignoreCase = true) }
+            val textUploaded = TextUploadQueue.uploadPending(this@MainActivity, config, uploadClient)
+            val remainingText = listLocalAnalysisTextFiles().size
             refreshConfigSummary()
-            statusText.text = if (failureCount == 0) {
-                "수동 업로드 완료 · 음성 ${successCount}개 / 잔여 WAV ${remainingWav}개"
+            statusText.text = "수동 업로드 완료 · 텍스트 ${textUploaded}개 / 잔여 TXT ${remainingText}개"
+
+            if (textUploaded > 0) {
+                toast("수동 텍스트 업로드를 완료했습니다.")
             } else {
-                "수동 업로드 일부 실패 · 음성 성공 ${successCount}개 / 실패 ${failureCount}개"
-            }
-            if (successCount > 0) {
-                toast("수동 음성 업로드를 완료했습니다.")
-            } else {
-                toast("업로드할 WAV 파일이 없거나 업로드에 실패했습니다.")
+                toast("업로드할 텍스트 파일이 없습니다(또는 전사 실패).")
             }
         }
     }
@@ -426,8 +386,8 @@ class MainActivity : AppCompatActivity() {
             appendLine("- 세션 이름: ${config.sessionLabel}")
             appendLine("- 녹음 시간: 07:00~20:00")
             appendLine("- 녹음 방식: VAD 자동 세그먼트 (16kHz)")
-            appendLine("- 전사 키: 서버의 Gemini API 키")
-            appendLine("- 모바일 Vosk 모델: ${modelStatus}")
+            appendLine("- 전사 방식: 모바일 Gemini STT → 텍스트 업로드")
+            appendLine("- 모바일 전사 상태: 앱 내 Gemini 호출")
             appendLine()
             appendLine(if (Prefs.isSetupComplete(this@MainActivity)) "설정 완료 · 메뉴에서 다시 수정할 수 있습니다." else "초기 설정이 필요합니다. 오른쪽 위 메뉴에서도 다시 열 수 있습니다.")
         }
