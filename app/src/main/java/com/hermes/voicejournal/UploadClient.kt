@@ -20,6 +20,8 @@ data class UploadResult(
 
 data class TextUploadResult(
     val textSavedPath: String?,
+    val qualityFlag: String?,
+    val qualityScore: Double?,
 )
 
 class UploadClient {
@@ -79,15 +81,21 @@ class UploadClient {
         sessionId: String,
         sourceFile: String,
         analyzedText: String,
+        sttEngine: String? = null,
+        sttModelId: String? = null,
+        sttConfidence: Double? = null,
     ): Result<TextUploadResult> = withContext(Dispatchers.IO) {
         runCatching {
             val url = buildUploadUrl(serverUrl, "/api/upload-text")
-            val body = MultipartBody.Builder()
+            val bodyBuilder = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("session_id", sessionId)
                 .addFormDataPart("source_file", sourceFile)
                 .addFormDataPart("analyzed_text", analyzedText)
-                .build()
+            sttEngine?.takeIf { it.isNotBlank() }?.let { bodyBuilder.addFormDataPart("stt_engine", it) }
+            sttModelId?.takeIf { it.isNotBlank() }?.let { bodyBuilder.addFormDataPart("stt_model_id", it) }
+            sttConfidence?.let { bodyBuilder.addFormDataPart("stt_confidence", it.toString()) }
+            val body = bodyBuilder.build()
 
             val request = Request.Builder()
                 .url(url)
@@ -102,6 +110,8 @@ class UploadClient {
                 val json = org.json.JSONObject(responseText)
                 TextUploadResult(
                     textSavedPath = json.optString("text_saved_path").ifBlank { null },
+                    qualityFlag = json.optString("quality_flag").ifBlank { null },
+                    qualityScore = if (json.has("quality_score")) json.optDouble("quality_score") else null,
                 )
             }
         }

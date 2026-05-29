@@ -8,6 +8,9 @@ import java.io.File
 import java.io.FileInputStream
 
 object VoskTranscriber {
+    const val STT_ENGINE = "vosk"
+    const val MODEL_ID = "vosk-model-small-ko-0.22"
+
     @Volatile
     private var model: Model? = null
 

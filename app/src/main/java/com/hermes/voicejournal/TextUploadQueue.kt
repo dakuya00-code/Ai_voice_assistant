@@ -49,6 +49,9 @@ object TextUploadQueue {
                 sessionId = sessionId,
                 sourceFile = file.name,
                 analyzedText = text,
+                sttEngine = VoskTranscriber.STT_ENGINE,
+                sttModelId = VoskTranscriber.MODEL_ID,
+                sttConfidence = estimateTextQualityScore(text),
             )
             if (result.isSuccess) {
                 UploadHistoryStore.append(
@@ -72,5 +75,24 @@ object TextUploadQueue {
             }
         }
         return uploaded
+    }
+
+    private fun estimateTextQualityScore(text: String): Double {
+        if (text.isBlank()) return 0.0
+        val cleaned = text.trim()
+        val chars = cleaned.length.coerceAtLeast(1)
+        val hangulCount = cleaned.count { it in '\uAC00'..'\uD7A3' }
+        val latinCount = cleaned.count { it.isLetter() && (it in 'a'..'z' || it in 'A'..'Z') }
+        val digitCount = cleaned.count { it.isDigit() }
+        val punctCount = cleaned.count { it in listOf('.', ',', '?', '!', ':', ';') }
+        val uniqueRatio = cleaned.toSet().size.toDouble() / chars.toDouble()
+
+        var score = 0.0
+        score += (hangulCount.toDouble() / chars) * 0.65
+        score += (punctCount.toDouble() / chars).coerceAtMost(0.08) * 1.5
+        score += uniqueRatio.coerceIn(0.0, 1.0) * 0.25
+        score -= (digitCount.toDouble() / chars).coerceAtMost(0.2) * 0.08
+        score -= (latinCount.toDouble() / chars).coerceAtMost(0.4) * 0.1
+        return score.coerceIn(0.0, 1.0)
     }
 }
